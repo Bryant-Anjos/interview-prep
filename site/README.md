@@ -13,6 +13,21 @@ already saved locally — it only asks which when a track in the file would
 actually overwrite existing local data. This is plain client-side file I/O
 (`Blob` + `FileReader`), entirely inside `template.html` — no new files.
 
+## Multi-language support
+
+`build.js` glob-discovers `tracks/<track-id>/data/questions.<lang>.json`
+overlay files (see `data/schema.md`'s Translations section for the format)
+and embeds them alongside the base data — no manual registration, adding a
+language is just dropping the file in. In the track view, a **Language**
+dropdown appears in the filter bar whenever a track has at least one
+translation; it's hidden entirely for a track that has none. Selecting a
+language is remembered per track (`localStorage`, same pattern as
+progress). A question without a translation yet for the selected language
+falls back to the base language with a small note explaining why, instead
+of silently looking untranslated or broken; every card also has its own
+"View original" / "View translation" toggle to compare one question
+without changing the language for the whole track.
+
 ## Files
 
 - `template.html` — the actual site (markup, CSS, JS). Contains a

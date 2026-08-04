@@ -1,0 +1,37 @@
+[
+  {
+    "id": "js-ts-fundamentals-01",
+    "question": "¿Qué es un closure en JavaScript, y puedes dar un ejemplo de closure que usarías dentro de un componente de React Native (fuera de hooks)?",
+    "answer": "Un closure es una función que conserva acceso a las variables de su ámbito exterior incluso después de que esa función exterior ya terminó de ejecutarse. En código RN fuera de hooks, un ejemplo común es una utilidad de `debounce`: la función interna devuelta encierra una variable `timeoutId` y la configuración del llamador, así puedes envolver algo como el handler `onChangeText` de un buscador para dejar de disparar una llamada a la API en cada tecla.",
+    "explanation": "Las funciones de JavaScript capturan su ámbito léxico, no una instantánea de los valores de las variables — así que la función interna siempre ve el valor actual de la variable exterior, y esa variable permanece viva en memoria mientras exista el closure (esta es también la razón por la que los closures pueden causar fugas de memoria si no tienes cuidado con lo que retienen, por ejemplo mantener una referencia a un objeto grande o al estado de un componente ya desmontado). Los closures son el mecanismo sobre el que se construyen internamente los hooks (cada llamada a un hook encierra el estado del fiber), pero la pregunta pide un ejemplo sin hooks: factories a nivel de módulo, creadores de manejadores de eventos, o utilidades como `debounce`/`throttle`/cachés memoizados son el caso clásico, ya que son patrones puros de JS utilizables en un archivo utilitario `.ts`, un componente de clase, o incluso fuera de React por completo.",
+    "options": null,
+    "code": null,
+    "references": [
+      { "label": "MDN — Closures" }
+    ]
+  },
+  {
+    "id": "js-ts-fundamentals-02",
+    "question": "¿Cuál es la diferencia práctica entre `let`, `const` y `var` en el JavaScript moderno, y por qué las bases de código RN/TypeScript casi siempre prefieren `const`?",
+    "answer": "`var` tiene ámbito de función y sufre hoisting de una manera que permite acceder a ella (como `undefined`) antes de su declaración, lo que causa errores sutiles con bucles y closures. `let` y `const` tienen ámbito de bloque y viven en una 'zona muerta temporal' hasta la línea de su declaración, así que no se pueden referenciar antes de eso. `const` además prohíbe reasignar el binding después de la inicialización. Las bases de código RN/TS usan `const` por defecto porque documenta la intención — 'esta referencia nunca cambia' —, hace imposibles los errores de reasignación accidental, y encaja naturalmente con el estilo de actualización inmutable que React espera (nuevos objetos/arrays en vez de mutar en el lugar); `let` queda reservado para el pequeño conjunto de variables que realmente deben reasignarse, como un contador de bucle o un acumulador.",
+    "explanation": "El ámbito de función de `var` significa que un `var` declarado dentro de un bloque `if` o un bucle `for` se filtra a toda la función, lo cual casi nunca es lo que quieres y es una fuente frecuente de bugs de closure con valores obsoletos (por ejemplo, un bucle `for (var i...)` capturando la misma `i` en todos los callbacks). `let`/`const` arreglan esto limitando el ámbito al `{}` más cercano. Es importante notar que `const` solo congela el *binding*, no el valor — `const arr = []` sigue permitiendo `arr.push(x)`, solo impide `arr = otroArr`. Para inmutabilidad real haría falta `Object.freeze` o una librería de actualización inmutable, pero en la práctica el código estilo React/Redux depende de la convención (crear nuevos objetos en vez de mutar) en lugar de una imposición en tiempo de ejecución.",
+    "options": null,
+    "code": null,
+    "references": [
+      { "label": "MDN — let" },
+      { "label": "MDN — const" }
+    ]
+  },
+  {
+    "id": "js-ts-fundamentals-03",
+    "question": "¿Cómo funciona el event loop de JavaScript, y por qué una computación síncrona larga en el hilo JS puede hacer que los gestos táctiles se sientan poco receptivos en una app de React Native?",
+    "answer": "JavaScript corre en un solo hilo: la call stack ejecuta una tarea hasta completarla, y luego el event loop toma la siguiente tarea de la cola (un timer, el callback de un evento nativo, la microtask de una promise resuelta). Nada más puede ejecutarse mientras la stack está ocupada. En React Native, la ejecución de JS ocurre en su propio hilo JS, separado del hilo de UI nativo que realmente renderiza las vistas — pero los eventos táctiles igual deben despacharse y manejarse en ese mismo hilo JS. Si una computación síncrona (por ejemplo, ordenar un array enorme, parsear un JSON grande) está acaparando la call stack, los eventos táctiles en cola y sus callbacks de JS (como un handler `onPress`) simplemente no pueden ejecutarse hasta que quede libre, así que la UI se siente congelada o lenta aunque el renderizado nativo en sí no esté bloqueado.",
+    "explanation": "Es un error común pensar que RN es inmune al jank por bloqueo del hilo JS porque 'la UI corre nativamente'. Eso es cierto para vistas nativas ya confirmadas y para animaciones controladas por `useNativeDriver`/worklets de Reanimated, que corren fuera del hilo JS — pero el reconocimiento de gestos normal, `onPress`, `setState`, y cualquier valor `Animated` manejado por JS aún dependen de que el hilo JS esté libre para procesar la cola de eventos. En la práctica, la solución es sacar el trabajo síncrono pesado del camino crítico: dividirlo en fragmentos con `setTimeout`/`InteractionManager.runAfterInteractions`, memoizar/evitar recomputación, o moverlo a un módulo nativo/worklet para que el hilo de UI y el manejo de gestos no se queden esperando a que la call stack del hilo JS se vacíe.",
+    "options": null,
+    "code": null,
+    "references": [
+      { "label": "MDN — El event loop" },
+      { "label": "Docs de React Native — Resumen de rendimiento (Respondiendo a toques)" }
+    ]
+  }
+]

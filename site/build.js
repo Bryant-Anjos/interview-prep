@@ -15,6 +15,12 @@
  * deploy folder). Tracks with no approved items yet are skipped — no
  * broken/empty guide is generated for unfinished tracks.
  *
+ * Also discovers translation overlays by filename convention — any
+ * tracks/<track-id>/data/questions.<lang>.json next to the base
+ * questions.json — and embeds them so the site can offer a language
+ * selector without any manual registration (see data/schema.md's
+ * Translations section).
+ *
  * No external dependencies — plain Node.js only.
  *
  * Usage: node site/build.js
@@ -34,6 +40,11 @@ const OUTPUT_PATH = path.join(SITE_DIR, "dist.html");
 const STUDY_GUIDES_DIR = path.join(SITE_DIR, "study-guides");
 const MARKER = "/*__SITE_DATA__*/";
 
+// Matches questions.<lang>.json — <lang> loosely BCP-47, lowercased, region
+// joined with a hyphen (en, pt-br, es, fr, de, ...). Never matches the base
+// questions.json or the working questions-queue.json.
+const TRANSLATION_FILE_RE = /^questions\.([a-z]{2}(?:-[a-z]{2})?)\.json$/;
+
 function readJson(filePath, fallback) {
   let raw;
   try {
@@ -50,6 +61,39 @@ function readJson(filePath, fallback) {
   }
 }
 
+// Reads every tracks/<track-id>/data/questions.<lang>.json next to
+// dataFilePath and returns { lang: { itemId: partialTranslatedItem } }.
+// Never throws — a missing/invalid translation file is just skipped, so a
+// broken overlay never breaks the build.
+function discoverTranslations(dataFilePath) {
+  const dataDir = path.dirname(dataFilePath);
+  let entries;
+  try {
+    entries = fs.readdirSync(dataDir);
+  } catch (err) {
+    return {};
+  }
+
+  const translations = {};
+  entries.forEach((filename) => {
+    const match = filename.match(TRANSLATION_FILE_RE);
+    if (!match) return;
+    const lang = match[1];
+    const loaded = readJson(path.join(dataDir, filename), null);
+    if (!Array.isArray(loaded)) {
+      console.warn(`  (skipping translation, not a JSON array) ${filename}`);
+      return;
+    }
+    const byId = {};
+    loaded.forEach((item) => {
+      if (item && typeof item.id === "string") byId[item.id] = item;
+    });
+    translations[lang] = byId;
+    console.log(`  Translation: ${filename} (${Object.keys(byId).length} items)`);
+  });
+  return translations;
+}
+
 function main() {
   console.log(`Reading manifest: ${MANIFEST_PATH}`);
   const manifest = readJson(MANIFEST_PATH, []);
@@ -63,6 +107,7 @@ function main() {
   fs.mkdirSync(STUDY_GUIDES_DIR, { recursive: true });
 
   const data = {};
+  const translations = {};
   const tracksWithGuides = manifest.map((track) => {
     if (!track || typeof track.id !== "string") {
       console.warn("  (skipping malformed track entry)", track);
@@ -76,6 +121,7 @@ function main() {
       console.log(`Reading track data: ${track.id} <- ${track.dataFile}`);
       const loaded = readJson(dataFilePath, []);
       items = Array.isArray(loaded) ? loaded : [];
+      translations[track.id] = discoverTranslations(dataFilePath);
     } else {
       console.warn(`  (no dataFile declared for track "${track.id}", using [])`);
     }
@@ -89,7 +135,7 @@ function main() {
     return Object.assign({}, track, { studyGuidePath: guideRelPath });
   });
 
-  const payload = { tracks: tracksWithGuides, data: data };
+  const payload = { tracks: tracksWithGuides, data: data, translations: translations };
 
   // Escape "</" so a stray "</script>" inside embedded strings (e.g. a code
   // sample or reference URL) can never break out of the <script> tag.

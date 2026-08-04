@@ -243,6 +243,23 @@
   .status-pill-known { background: var(--known-bg); color: var(--known); }
   .status-pill-review { background: var(--review-bg); color: var(--review); }
 
+  .lang-note {
+    display: inline-block;
+    margin: -2px 0 6px;
+    font-size: 0.75rem;
+  }
+  .lang-note-fallback { color: var(--text-dim); font-style: italic; }
+  .lang-toggle {
+    font: inherit;
+    font-size: 0.75rem;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
   .question-toggle {
     display: flex;
     align-items: center;
@@ -388,14 +405,19 @@
       { value: "multiple-choice", label: "Multiple Choice" },
       { value: "open-question", label: "Open Question" }
     ];
+    var LANG_LABELS = {
+      en: "English", "pt-br": "Português (BR)", es: "Español", fr: "Français",
+      de: "Deutsch", it: "Italiano", ja: "日本語", zh: "中文"
+    };
 
-    var SITE_DATA = { tracks: [], data: {} };
+    var SITE_DATA = { tracks: [], data: {}, translations: {} };
     try {
       var raw = document.getElementById("site-data").textContent;
       var parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
         SITE_DATA.tracks = Array.isArray(parsed.tracks) ? parsed.tracks : [];
         SITE_DATA.data = parsed.data && typeof parsed.data === "object" ? parsed.data : {};
+        SITE_DATA.translations = parsed.translations && typeof parsed.translations === "object" ? parsed.translations : {};
       }
     } catch (e) {
       console.error("Interview Prep: failed to parse embedded site data.", e);
@@ -407,7 +429,9 @@
     var state = {
       view: "landing",
       trackId: null,
-      filters: { area: "all", level: "all", type: "all", status: "all", search: "" }
+      filters: { area: "all", level: "all", type: "all", status: "all", search: "" },
+      lang: null,
+      itemLangOverride: {}
     };
 
     function escapeHtml(value) {
@@ -477,6 +501,94 @@
       } catch (e) {
         memoryFallback[key] = progress;
       }
+    }
+
+    // --- Language selection (per track, persisted) ------------------------
+
+    function langKey(trackId) {
+      return "interview-prep:lang:" + trackId;
+    }
+
+    function loadLang(trackId) {
+      var key = langKey(trackId);
+      try {
+        return localStorage.getItem(key) || memoryFallback[key] || null;
+      } catch (e) {
+        return memoryFallback[key] || null;
+      }
+    }
+
+    function saveLang(trackId, lang) {
+      var key = langKey(trackId);
+      try {
+        localStorage.setItem(key, lang);
+      } catch (e) {
+        memoryFallback[key] = lang;
+      }
+    }
+
+    // Every language this track can be studied in: its base/default
+    // language plus whatever questions.<lang>.json overlays were found at
+    // build time. Returns just [defaultLang] when there are no translations
+    // — callers use that to hide the language picker entirely.
+    function trackLangs(track) {
+      var defaultLang = (track && track.defaultLang) || "en";
+      var langs = [defaultLang];
+      var extra = Object.keys(SITE_DATA.translations[track && track.id] || {});
+      extra.sort().forEach(function (lang) {
+        if (langs.indexOf(lang) === -1) langs.push(lang);
+      });
+      return langs;
+    }
+
+    function langLabel(lang) {
+      return LANG_LABELS[lang] || lang.toUpperCase();
+    }
+
+    // Merges a translation's fields onto the base item for display. Missing
+    // fields on the translation (including a null "code" or omitted
+    // "references") intentionally fall back to the base item's value, per
+    // the partial-overlay contract in data/schema.md — a translation only
+    // has to carry what's actually been translated.
+    function mergeTranslatedItem(baseItem, translation) {
+      var merged = {
+        id: baseItem.id, track: baseItem.track, area: baseItem.area,
+        level: baseItem.level, type: baseItem.type,
+        question: translation.question || baseItem.question,
+        answer: translation.answer || baseItem.answer,
+        explanation: translation.explanation != null ? translation.explanation : baseItem.explanation,
+        code: translation.code != null ? translation.code : baseItem.code,
+        options: baseItem.type === "multiple-choice" && Array.isArray(translation.options) && translation.options.length
+          ? translation.options
+          : baseItem.options,
+        references: baseItem.references
+      };
+      if (Array.isArray(baseItem.references) && baseItem.references.length && Array.isArray(translation.references)) {
+        merged.references = baseItem.references.map(function (ref, i) {
+          var override = translation.references[i];
+          return override && override.label ? { label: override.label, url: ref.url } : ref;
+        });
+      }
+      return merged;
+    }
+
+    // Resolves what to actually render for one item at one language:
+    //   - lang is the track's default (or unset) -> base item, as-is.
+    //   - a translation exists for this item -> merged item.
+    //   - lang requested but this item isn't translated yet -> base item,
+    //     with isFallback:true so the card can say so instead of silently
+    //     showing English and looking like a bug.
+    function resolveItemForLang(item, track, lang) {
+      var defaultLang = (track && track.defaultLang) || "en";
+      if (!lang || lang === defaultLang) {
+        return { item: item, lang: defaultLang, isFallback: false, hasTranslation: false };
+      }
+      var translation = (SITE_DATA.translations[track.id] || {})[lang] || {};
+      var entry = translation[item.id];
+      if (!entry) {
+        return { item: item, lang: defaultLang, isFallback: true, hasTranslation: false };
+      }
+      return { item: mergeTranslatedItem(item, entry), lang: lang, isFallback: false, hasTranslation: true };
     }
 
     // --- Progress export / import ----------------------------------------
@@ -756,6 +868,15 @@
       state.view = "track";
       state.trackId = trackId;
       state.filters = { area: "all", level: "all", type: "all", status: "all", search: "" };
+      state.itemLangOverride = {};
+
+      var track = getTrackMeta(trackId);
+      var available = trackLangs(track);
+      var savedLang = loadLang(trackId);
+      state.lang = savedLang && available.indexOf(savedLang) !== -1
+        ? savedLang
+        : available[0];
+
       if (!skipHashUpdate) updateHash(trackId, null, false);
       render();
     }
@@ -928,9 +1049,18 @@
       );
     }
 
-    function renderFilters(areas, total, filteredCount, progress, allItems) {
+    function renderFilters(areas, total, filteredCount, progress, allItems, track) {
       var counts = computeCounts(allItems, progress);
       var f = state.filters;
+
+      var langs = trackLangs(track);
+      var langSelectHtml = "";
+      if (langs.length > 1) {
+        var langOptions = langs.map(function (lang) {
+          return '<option value="' + escapeHtml(lang) + '"' + (state.lang === lang ? " selected" : "") + ">" + escapeHtml(langLabel(lang)) + "</option>";
+        }).join("");
+        langSelectHtml = '<label>Language<select id="filter-lang">' + langOptions + "</select></label>";
+      }
 
       var areaOptions = '<option value="all"' + (f.area === "all" ? " selected" : "") + ">All</option>" +
         areas.map(function (a) {
@@ -960,6 +1090,7 @@
             '<label>Level<select id="filter-level">' + levelOptions + "</select></label>" +
             '<label>Type<select id="filter-type">' + typeOptions + "</select></label>" +
             '<label>Status<select id="filter-status">' + statusOptions + "</select></label>" +
+            langSelectHtml +
           "</div>" +
           '<div class="filter-row">' +
             '<input type="search" id="filter-search" placeholder="Search questions…" value="' + escapeHtml(f.search) + '" />' +
@@ -969,7 +1100,12 @@
       );
     }
 
-    function renderCard(item, status) {
+    function renderCard(baseItem, status, track) {
+      var effectiveLang = state.itemLangOverride[baseItem.id] || state.lang;
+      var resolved = resolveItemForLang(baseItem, track, effectiveLang);
+      var item = resolved.item;
+      var defaultLang = (track && track.defaultLang) || "en";
+
       var statusLabel = status === "known" ? "Known" : status === "review" ? "Needs review" : "Unmarked";
       var optionsHtml = "";
       if (item.type === "multiple-choice" && Array.isArray(item.options)) {
@@ -991,14 +1127,34 @@
           "</ul>";
       }
 
+      // Language state for this specific card: a badge when the globally
+      // selected language wants a translation this item doesn't have yet
+      // (falling back to the base language, not a bug), or a small toggle
+      // to compare a translation against the original and back.
+      var langNoteHtml = "";
+      if (resolved.isFallback) {
+        langNoteHtml = '<span class="lang-note lang-note-fallback">' +
+          escapeHtml(langLabel(state.lang)) + " not available yet — showing " + escapeHtml(langLabel(defaultLang)) +
+          "</span>";
+      } else if (resolved.hasTranslation) {
+        langNoteHtml = '<button class="lang-toggle" data-lang-toggle="' + escapeHtml(defaultLang) + '">' +
+          "View original (" + escapeHtml(langLabel(defaultLang)) + ")</button>";
+      } else if (state.lang && state.lang !== defaultLang && effectiveLang === defaultLang) {
+        // User manually flipped this one card back to the original while
+        // a translation is globally selected — offer the way back too.
+        langNoteHtml = '<button class="lang-toggle" data-lang-toggle="' + escapeHtml(state.lang) + '">' +
+          "View translation (" + escapeHtml(langLabel(state.lang)) + ")</button>";
+      }
+
       return (
-        '<article class="card status-' + (status || "unmarked") + '" data-item-id="' + escapeHtml(item.id) + '">' +
+        '<article class="card status-' + (status || "unmarked") + '" data-item-id="' + escapeHtml(baseItem.id) + '">' +
           '<div class="card-meta">' +
             '<span class="badge badge-area">' + escapeHtml(item.area) + "</span>" +
             '<span class="badge badge-level level-' + escapeHtml(item.level) + '">' + escapeHtml(item.level) + "</span>" +
             '<span class="badge badge-type">' + escapeHtml(typeLabel(item.type)) + "</span>" +
             '<span class="status-pill status-pill-' + (status || "unmarked") + '">' + statusLabel + "</span>" +
           "</div>" +
+          langNoteHtml +
           '<button class="question-toggle" aria-expanded="false">' +
             '<span class="q-text">' + escapeHtml(item.question) + "</span>" +
             '<span class="chevron" aria-hidden="true">&#9656;</span>' +
@@ -1062,13 +1218,13 @@
 
       var filtered = applyFilters(allItems, progress);
       var listHtml = filtered.length
-        ? filtered.map(function (item) { return renderCard(item, progress[item.id]); }).join("")
+        ? filtered.map(function (item) { return renderCard(item, progress[item.id], track); }).join("")
         : '<p class="empty-state-inline">No items match the current filters.</p>';
 
       app.innerHTML =
         '<section class="track-view">' +
           renderTrackHeader(track) +
-          renderFilters(areas, allItems.length, filtered.length, progress, allItems) +
+          renderFilters(areas, allItems.length, filtered.length, progress, allItems, track) +
           '<div class="card-list" id="card-list">' + listHtml + "</div>" +
         "</section>";
 
@@ -1092,12 +1248,19 @@
       var typeSel = document.getElementById("filter-type");
       var statusSel = document.getElementById("filter-status");
       var searchInput = document.getElementById("filter-search");
+      var langSel = document.getElementById("filter-lang");
 
       if (areaSel) areaSel.addEventListener("change", function () { state.filters.area = areaSel.value; renderTrackView(); });
       if (levelSel) levelSel.addEventListener("change", function () { state.filters.level = levelSel.value; renderTrackView(); });
       if (typeSel) typeSel.addEventListener("change", function () { state.filters.type = typeSel.value; renderTrackView(); });
       if (statusSel) statusSel.addEventListener("change", function () { state.filters.status = statusSel.value; renderTrackView(); });
       if (searchInput) searchInput.addEventListener("input", function () { state.filters.search = searchInput.value; renderTrackView(); });
+      if (langSel) langSel.addEventListener("change", function () {
+        state.lang = langSel.value;
+        state.itemLangOverride = {}; // switching the global language resets any per-card overrides
+        saveLang(state.trackId, state.lang);
+        renderTrackView();
+      });
     }
 
     function bindCardEvents() {
@@ -1141,6 +1304,21 @@
             progress[itemId] = next;
           }
           saveProgress(state.trackId, progress);
+          renderTrackView();
+        });
+      }
+
+      var langToggles = list.querySelectorAll(".lang-toggle");
+      for (var k = 0; k < langToggles.length; k++) {
+        langToggles[k].addEventListener("click", function () {
+          var card = this.closest(".card");
+          var itemId = card.getAttribute("data-item-id");
+          var targetLang = this.getAttribute("data-lang-toggle");
+          if (targetLang === state.lang) {
+            delete state.itemLangOverride[itemId]; // back to following the global selection
+          } else {
+            state.itemLangOverride[itemId] = targetLang;
+          }
           renderTrackView();
         });
       }

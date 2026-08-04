@@ -443,9 +443,17 @@
     }
 
     function updateHash(trackId, itemId, replace) {
-      var newHash = trackId ? buildHash(trackId, itemId) : "#/";
+      var method = replace ? "replaceState" : "pushState";
+      if (!trackId) {
+        // Back to landing — clear the deep link entirely instead of
+        // leaving a "#/" behind in the address bar.
+        if (!window.location.hash) return;
+        history[method](null, "", window.location.pathname + window.location.search);
+        return;
+      }
+      var newHash = buildHash(trackId, itemId);
       if (window.location.hash === newHash) return;
-      history[replace ? "replaceState" : "pushState"](null, "", newHash);
+      history[method](null, "", newHash);
     }
 
     function progressKey(trackId) {
@@ -1072,7 +1080,10 @@
 
     function bindBackButton() {
       var btn = document.getElementById("back-btn");
-      if (btn) btn.addEventListener("click", showLanding);
+      // Not `addEventListener("click", showLanding)` directly — that would
+      // pass the click Event as showLanding's skipHashUpdate argument
+      // (truthy), silently skipping the hash clear below.
+      if (btn) btn.addEventListener("click", function () { showLanding(); });
     }
 
     function bindFilterEvents() {

@@ -10,8 +10,6 @@ permissions:
   pages: write
   id-token: write
 
-# Only one Pages deployment at a time; let in-flight deploys finish instead
-# of cancelling them (standard pattern from GitHub's Pages docs).
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -19,6 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,9 +25,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
-      - name: Build site (reads current tracks/*/data/questions.json)
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build site
         run: node site/build.js
 
       - name: Prepare Pages deploy folder
@@ -37,16 +39,18 @@ jobs:
           cp site/dist.html _site/index.html
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: _site
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

@@ -5,6 +5,7 @@
   "description": "Personal interview prep study hub: build/serve the self-contained study site under site/.",
   "scripts": {
     "build": "node site/build.js",
-    "start": "node site/build.js && node site/serve.js"
+    "start": "node site/build.js && node site/serve.js",
+    "study-guide": "node scripts/generate-study-guide.js"
   }
 }

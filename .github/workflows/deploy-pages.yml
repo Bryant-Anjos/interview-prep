@@ -37,6 +37,9 @@ jobs:
         run: |
           mkdir -p _site
           cp site/dist.html _site/index.html
+          if [ -d site/study-guides ]; then
+            cp -r site/study-guides _site/study-guides
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4

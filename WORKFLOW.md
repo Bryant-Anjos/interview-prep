@@ -66,7 +66,8 @@ stays proportional to what's left to do, not to the track's whole history.
 3. **Answerer** (told which track) → processes that track's queue, batch by batch (suggest: one area at a time)
 4. **Reviewer** (told which track) → audits each answered batch, bounces anything incorrect back
 5. Repeat 3–4 until that track's queue is empty
-6. Regenerate that track's `study-guide.md`
+6. Regenerate that track's `study-guide.md` (`npm run study-guide -- <track-id>`,
+   or just run the site build — step 7 already does this for every track)
 7. Site build step merges the track's `questions.json` into the site
 8. To add another track: copy `tracks/_template/`, fill in `track.md`, add it to `tracks-manifest.json`, repeat steps 1–7 for it — no agent or site code changes needed
 

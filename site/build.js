@@ -7,6 +7,14 @@
  * JSON), embeds everything into site/template.html at the
  * `/*__SITE_DATA__*\/` marker, and writes the result to site/dist.html.
  *
+ * Also regenerates every track's study-guide.md (via
+ * scripts/generate-study-guide.js) and copies each one into
+ * site/study-guides/<track-id>.md, so it's served alongside the site by
+ * both `npm start` (site/serve.js already serves any file under site/) and
+ * the GitHub Pages workflow (which copies site/study-guides/ into the
+ * deploy folder). Tracks with no approved items yet are skipped — no
+ * broken/empty guide is generated for unfinished tracks.
+ *
  * No external dependencies — plain Node.js only.
  *
  * Usage: node site/build.js
@@ -16,12 +24,14 @@
 
 const fs = require("fs");
 const path = require("path");
+const { generateStudyGuide } = require("../scripts/generate-study-guide");
 
 const SITE_DIR = __dirname;
 const PROJECT_ROOT = path.join(SITE_DIR, "..");
 const MANIFEST_PATH = path.join(PROJECT_ROOT, "tracks", "tracks-manifest.json");
 const TEMPLATE_PATH = path.join(SITE_DIR, "template.html");
 const OUTPUT_PATH = path.join(SITE_DIR, "dist.html");
+const STUDY_GUIDES_DIR = path.join(SITE_DIR, "study-guides");
 const MARKER = "/*__SITE_DATA__*/";
 
 function readJson(filePath, fallback) {
@@ -47,11 +57,16 @@ function main() {
     throw new Error("tracks-manifest.json must be a JSON array of track objects.");
   }
 
+  // Fresh each build — stale guides from tracks that no longer qualify
+  // (e.g. reverted below their first approved item) shouldn't linger.
+  fs.rmSync(STUDY_GUIDES_DIR, { recursive: true, force: true });
+  fs.mkdirSync(STUDY_GUIDES_DIR, { recursive: true });
+
   const data = {};
-  manifest.forEach((track) => {
+  const tracksWithGuides = manifest.map((track) => {
     if (!track || typeof track.id !== "string") {
       console.warn("  (skipping malformed track entry)", track);
-      return;
+      return track;
     }
     const dataFilePath = track.dataFile
       ? path.join(PROJECT_ROOT, track.dataFile)
@@ -65,9 +80,16 @@ function main() {
       console.warn(`  (no dataFile declared for track "${track.id}", using [])`);
     }
     data[track.id] = items;
+
+    const guide = generateStudyGuide(track.id);
+    if (!guide) return track;
+    const guideRelPath = `study-guides/${track.id}.md`;
+    fs.writeFileSync(path.join(SITE_DIR, guideRelPath), guide.markdown);
+    console.log(`  Study guide: ${guideRelPath} (${guide.itemCount} items)`);
+    return Object.assign({}, track, { studyGuidePath: guideRelPath });
   });
 
-  const payload = { tracks: manifest, data: data };
+  const payload = { tracks: tracksWithGuides, data: data };
 
   // Escape "</" so a stray "</script>" inside embedded strings (e.g. a code
   // sample or reference URL) can never break out of the <script> tag.

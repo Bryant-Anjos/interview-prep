@@ -5,6 +5,9 @@
 // rest of the pipeline. Reads a track's approved questions.json and writes
 // a readable tracks/<track-id>/study-guide.md.
 //
+// Exposes generateStudyGuide(trackId) so site/build.js can regenerate every
+// track's guide as part of the site build, in addition to standalone CLI use:
+//
 // Usage: node scripts/generate-study-guide.js <track-id>
 //   (or: npm run study-guide -- <track-id>)
 
@@ -33,33 +36,7 @@ function slugify(text) {
     .replace(/(^-|-$)/g, "");
 }
 
-function main() {
-  const trackId = process.argv[2];
-  if (!trackId) {
-    console.error("Usage: node scripts/generate-study-guide.js <track-id>");
-    process.exit(1);
-  }
-
-  const manifest = readJson("tracks/tracks-manifest.json");
-  const track = manifest.find((t) => t.id === trackId);
-  if (!track) {
-    console.error(`Track "${trackId}" not found in tracks/tracks-manifest.json`);
-    process.exit(1);
-  }
-
-  let items;
-  try {
-    items = readJson(track.dataFile).filter((i) => i.status === "approved");
-  } catch (e) {
-    console.error(`Could not read/parse ${track.dataFile}: ${e.message}`);
-    process.exit(1);
-  }
-
-  if (!items.length) {
-    console.error(`No approved items found for track "${trackId}" (${track.dataFile}) — nothing to generate.`);
-    process.exit(1);
-  }
-
+function groupByArea(items) {
   // Group by area, preserving each area's first-appearance order in the data.
   const areaOrder = [];
   const byArea = new Map();
@@ -79,12 +56,18 @@ function main() {
     });
   });
 
+  return { areaOrder, byArea };
+}
+
+function buildMarkdown(track, trackId, items) {
+  const { areaOrder, byArea } = groupByArea(items);
+
   const lines = [];
   lines.push(`# ${track.name} — Study Guide`);
   lines.push("");
   lines.push(
     `> Generated from \`${track.dataFile}\` — ${items.length} approved items across ${areaOrder.length} areas. ` +
-    `Regenerate with \`node scripts/generate-study-guide.js ${trackId}\` whenever the bank changes.`
+    `Regenerate with \`node scripts/generate-study-guide.js ${trackId}\` (or \`npm run build\`, which refreshes every track's guide) whenever the bank changes.`
   );
   lines.push("");
   lines.push("## Contents");
@@ -128,9 +111,59 @@ function main() {
     });
   });
 
-  const outPath = path.join(ROOT, `tracks/${trackId}/study-guide.md`);
-  fs.writeFileSync(outPath, lines.join("\n"));
-  console.log(`Wrote ${outPath} (${items.length} items, ${areaOrder.length} areas).`);
+  return lines.join("\n");
 }
 
-main();
+/**
+ * Regenerates tracks/<trackId>/study-guide.md from that track's current
+ * approved questions.json. Returns { path, markdown, itemCount, areaCount }
+ * on success, or null if the track doesn't exist / has no approved items yet
+ * (never throws — callers like site/build.js need this to be a soft no-op
+ * for an unfinished track, not a build failure).
+ */
+function generateStudyGuide(trackId) {
+  let manifest;
+  try {
+    manifest = readJson("tracks/tracks-manifest.json");
+  } catch (e) {
+    return null;
+  }
+
+  const track = manifest.find((t) => t.id === trackId);
+  if (!track || !track.dataFile) return null;
+
+  let items;
+  try {
+    items = readJson(track.dataFile);
+  } catch (e) {
+    return null;
+  }
+  items = (Array.isArray(items) ? items : []).filter((i) => i.status === "approved");
+  if (!items.length) return null;
+
+  const markdown = buildMarkdown(track, trackId, items);
+  const outPath = path.join(ROOT, `tracks/${trackId}/study-guide.md`);
+  fs.writeFileSync(outPath, markdown);
+
+  const areaCount = new Set(items.map((i) => i.area)).size;
+  return { path: outPath, markdown, itemCount: items.length, areaCount };
+}
+
+module.exports = { generateStudyGuide };
+
+if (require.main === module) {
+  const trackId = process.argv[2];
+  if (!trackId) {
+    console.error("Usage: node scripts/generate-study-guide.js <track-id>");
+    process.exit(1);
+  }
+  const result = generateStudyGuide(trackId);
+  if (!result) {
+    console.error(
+      `Could not generate a study guide for "${trackId}" — track not found in ` +
+      `tracks/tracks-manifest.json, its dataFile is missing/invalid, or it has no approved items yet.`
+    );
+    process.exit(1);
+  }
+  console.log(`Wrote ${result.path} (${result.itemCount} items, ${result.areaCount} areas).`);
+}

@@ -1,6 +1,6 @@
 # React Native — Study Guide
 
-> Generated from `tracks/react-native/data/questions.json` — 105 approved items across 12 areas. Regenerate with `node scripts/generate-study-guide.js react-native` whenever the bank changes.
+> Generated from `tracks/react-native/data/questions.json` — 105 approved items across 12 areas. Regenerate with `node scripts/generate-study-guide.js react-native` (or `npm run build`, which refreshes every track's guide) whenever the bank changes.
 
 ## Contents
 

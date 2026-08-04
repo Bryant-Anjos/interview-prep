@@ -23,6 +23,14 @@ build tools, no external requests — just HTML/CSS/JS.
 - `dist.html` — **the build output**. This is the file that actually gets
   opened in a browser or published as a Claude Artifact. Generated, not
   hand-edited — every rebuild overwrites it.
+- `study-guides/` — **generated build output**, one `<track-id>.md` per
+  track that has at least one approved item (via
+  `scripts/generate-study-guide.js`). Served alongside the site — locally
+  by `serve.js` (it serves any file under `site/`, not just `dist.html`)
+  and on GitHub Pages by the deploy workflow, which copies this folder
+  into the published output. Each track card on the landing screen links
+  to its guide when one exists. Regenerated (fully, stale entries removed)
+  on every build — never hand-edited.
 
 ## Preview it: `npm start`
 
@@ -78,7 +86,9 @@ This reads `tracks/tracks-manifest.json`, loads each track's `dataFile`
 valid JSON — the build never breaks mid-pipeline because a track isn't
 finished yet), injects the manifest + all track data into
 `site/template.html` at the `/*__SITE_DATA__*/` marker, and writes the
-result to `site/dist.html`.
+result to `site/dist.html`. It also regenerates every track's
+`study-guide.md` (skipping tracks with zero approved items) and copies each
+one into `site/study-guides/<track-id>.md`.
 
 Re-run the build (or just use `npm start`, which always rebuilds first) any
 time track content changes (new items approved, a new track added to the
@@ -101,10 +111,13 @@ automatically on every push to `main` (and on-demand via the workflow's
 "Run workflow" button). It runs `node site/build.js` against whatever is
 currently in `tracks/*/data/questions.json` (so Pages always reflects the
 latest approved content), copies the output to `index.html` (the entry
-point GitHub Pages expects), and publishes it with the official
+point GitHub Pages expects) plus `site/study-guides/` to a `study-guides/`
+folder alongside it, and publishes it with the official
 `actions/upload-pages-artifact` + `actions/deploy-pages` actions. Pages
-serves the file directly — no server process, so the `.env`/`PORT` setup
-above doesn't apply there.
+serves the files directly — no server process, so the `.env`/`PORT` setup
+above doesn't apply there. Each track's guide ends up at
+`https://<user>.github.io/<repo>/study-guides/<track-id>.md`, and is linked
+from that track's card on the landing screen.
 
 **One manual step the user still has to do** (can't be automated — it's a
 one-time click in the GitHub UI): after pushing this repo to GitHub, go to

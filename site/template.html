@@ -82,7 +82,14 @@
     margin-top: 20px;
   }
 
+  .track-card-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
   .track-card {
+    width: 100%;
     text-align: left;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
@@ -95,6 +102,15 @@
     transition: border-color 0.15s ease;
   }
   .track-card:hover, .track-card:focus-visible { border-color: var(--accent); outline: none; }
+
+  .study-guide-link {
+    align-self: flex-start;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    padding: 2px 4px;
+  }
+  .study-guide-link:hover { color: var(--accent); text-decoration: underline; }
 
   .track-card-header {
     display: flex;
@@ -567,15 +583,24 @@
           var items = SITE_DATA.data[t.id] || [];
           var count = items.length;
           var status = t.status || "unknown";
+          // Sibling of the button, not nested inside it — <a> inside
+          // <button> is invalid HTML and would break click handling.
+          var guideLink = t.studyGuidePath
+            ? '<a class="study-guide-link" href="' + escapeHtml(t.studyGuidePath) + '" download ' +
+              'target="_blank" rel="noopener noreferrer">&#128196; Download study guide (.md)</a>'
+            : "";
           return (
-            '<button class="track-card" data-track-id="' + escapeHtml(t.id) + '">' +
-              '<div class="track-card-header">' +
-                "<h2>" + escapeHtml(t.name || t.id) + "</h2>" +
-                '<span class="badge status-' + escapeHtml(status) + '">' + escapeHtml(status) + "</span>" +
-              "</div>" +
-              '<p class="track-desc">' + escapeHtml(t.description || "") + "</p>" +
-              '<p class="track-count">' + count + " question" + (count === 1 ? "" : "s") + "</p>" +
-            "</button>"
+            '<div class="track-card-wrap">' +
+              '<button class="track-card" data-track-id="' + escapeHtml(t.id) + '">' +
+                '<div class="track-card-header">' +
+                  "<h2>" + escapeHtml(t.name || t.id) + "</h2>" +
+                  '<span class="badge status-' + escapeHtml(status) + '">' + escapeHtml(status) + "</span>" +
+                "</div>" +
+                '<p class="track-desc">' + escapeHtml(t.description || "") + "</p>" +
+                '<p class="track-count">' + count + " question" + (count === 1 ? "" : "s") + "</p>" +
+              "</button>" +
+              guideLink +
+            "</div>"
           );
         }).join("");
       }

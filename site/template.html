@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interview Prep Study Hub</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --bg-elevated: #ffffff;
+    --text: #1a1d23;
+    --text-dim: #5b6270;
+    --border: #d9dce1;
+    --accent: #3457d5;
+    --accent-contrast: #ffffff;
+    --known: #167a3d;
+    --known-bg: #e0f6e7;
+    --review: #b5510f;
+    --review-bg: #fdead9;
+    --unmarked-bg: #eceef1;
+    --unmarked-text: #5b6270;
+    --code-bg: #eef0f4;
+    --shadow: 0 1px 3px rgba(20, 22, 26, 0.08);
+    --level-junior: #1f9d55;
+    --level-mid: #2563eb;
+    --level-senior: #7c3aed;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --bg-elevated: #1e2126;
+      --text: #eef0f4;
+      --text-dim: #a0a7b4;
+      --border: #33373f;
+      --accent: #8ba0ff;
+      --accent-contrast: #10131a;
+      --known: #4ade80;
+      --known-bg: #163524;
+      --review: #fb923c;
+      --review-bg: #3a2313;
+      --unmarked-bg: #262a31;
+      --unmarked-text: #a0a7b4;
+      --code-bg: #23262d;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      --level-junior: #4ade80;
+      --level-mid: #7ba1ff;
+      --level-senior: #c4a3ff;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+
+  .container {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 24px 16px 64px;
+  }
+
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 0 0 6px; }
+  h3 { font-size: 0.95rem; margin: 16px 0 4px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  p { margin: 0 0 8px; }
+  a { color: var(--accent); }
+
+  .subtitle { color: var(--text-dim); margin: 0 0 4px; }
+
+  /* Landing */
+  .track-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  .track-card {
+    text-align: left;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    box-shadow: var(--shadow);
+    transition: border-color 0.15s ease;
+  }
+  .track-card:hover, .track-card:focus-visible { border-color: var(--accent); outline: none; }
+
+  .track-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .track-desc { color: var(--text-dim); font-size: 0.9rem; }
+  .track-count { font-size: 0.85rem; color: var(--text-dim); margin: 8px 0 0; }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--unmarked-bg);
+    color: var(--unmarked-text);
+    white-space: nowrap;
+  }
+  .status-in-progress { background: var(--review-bg); color: var(--review); }
+  .status-complete { background: var(--known-bg); color: var(--known); }
+
+  /* Track view */
+  .track-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .back-btn {
+    align-self: flex-start;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font: inherit;
+  }
+  .back-btn:hover { border-color: var(--accent); }
+
+  .empty-state, .empty-state-inline {
+    background: var(--bg-elevated);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .empty-sub { font-size: 0.9rem; }
+
+  .filters {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .filters label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    gap: 3px;
+  }
+
+  .filters select, .filters input[type="search"] {
+    font: inherit;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  .filters input[type="search"] { flex: 1; min-width: 200px; }
+  .result-count { font-size: 0.8rem; color: var(--text-dim); white-space: nowrap; }
+
+  .card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .card.status-known { border-left: 4px solid var(--known); }
+  .card.status-review { border-left: 4px solid var(--review); }
+
+  .card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .badge-level.level-Junior { background: color-mix(in srgb, var(--level-junior) 18%, transparent); color: var(--level-junior); }
+  .badge-level.level-Mid { background: color-mix(in srgb, var(--level-mid) 18%, transparent); color: var(--level-mid); }
+  .badge-level.level-Senior { background: color-mix(in srgb, var(--level-senior) 18%, transparent); color: var(--level-senior); }
+
+  .status-pill {
+    margin-left: auto;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--unmarked-bg);
+    color: var(--unmarked-text);
+  }
+  .status-pill-known { background: var(--known-bg); color: var(--known); }
+  .status-pill-review { background: var(--review-bg); color: var(--review); }
+
+  .question-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .chevron { color: var(--text-dim); flex-shrink: 0; }
+
+  .options-list {
+    margin: 8px 0 4px;
+    padding-left: 20px;
+    color: var(--text-dim);
+    font-size: 0.92rem;
+  }
+
+  .answer-panel {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .answer-panel[hidden] { display: none; }
+
+  .code-block {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    white-space: pre;
+  }
+
+  .references-list {
+    padding-left: 20px;
+    font-size: 0.9rem;
+  }
+
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .action-btn {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .known-btn:hover { border-color: var(--known); color: var(--known); }
+  .review-btn:hover { border-color: var(--review); color: var(--review); }
+  .clear-btn:hover { border-color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <main class="container" id="app"></main>
+
+  <script id="site-data" type="application/json">/*__SITE_DATA__*/</script>
+  <script>
+  (function () {
+    "use strict";
+
+    var LEVELS = ["Junior", "Mid", "Senior"];
+    var TYPES = [
+      { value: "conceptual", label: "Conceptual" },
+      { value: "code-challenge", label: "Code Challenge" },
+      { value: "multiple-choice", label: "Multiple Choice" },
+      { value: "open-question", label: "Open Question" }
+    ];
+
+    var SITE_DATA = { tracks: [], data: {} };
+    try {
+      var raw = document.getElementById("site-data").textContent;
+      var parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        SITE_DATA.tracks = Array.isArray(parsed.tracks) ? parsed.tracks : [];
+        SITE_DATA.data = parsed.data && typeof parsed.data === "object" ? parsed.data : {};
+      }
+    } catch (e) {
+      console.error("Interview Prep: failed to parse embedded site data.", e);
+    }
+
+    var app = document.getElementById("app");
+    var memoryFallback = {};
+
+    var state = {
+      view: "landing",
+      trackId: null,
+      filters: { area: "all", level: "all", type: "all", status: "all", search: "" }
+    };
+
+    function escapeHtml(value) {
+      if (value === null || value === undefined) return "";
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function progressKey(trackId) {
+      return "interview-prep:progress:" + trackId;
+    }
+
+    function loadProgress(trackId) {
+      var key = progressKey(trackId);
+      try {
+        var raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        return memoryFallback[key] || {};
+      }
+    }
+
+    function saveProgress(trackId, progress) {
+      var key = progressKey(trackId);
+      try {
+        localStorage.setItem(key, JSON.stringify(progress));
+      } catch (e) {
+        memoryFallback[key] = progress;
+      }
+    }
+
+    function getTrackMeta(trackId) {
+      var found = null;
+      SITE_DATA.tracks.forEach(function (t) {
+        if (t.id === trackId) found = t;
+      });
+      return found;
+    }
+
+    function computeCounts(items, progress) {
+      var known = 0, review = 0;
+      items.forEach(function (item) {
+        var s = progress[item.id];
+        if (s === "known") known++;
+        else if (s === "review") review++;
+      });
+      return { known: known, review: review, unmarked: items.length - known - review };
+    }
+
+    function applyFilters(items, progress) {
+      var f = state.filters;
+      var searchLower = f.search.trim().toLowerCase();
+      return items.filter(function (item) {
+        if (f.area !== "all" && item.area !== f.area) return false;
+        if (f.level !== "all" && item.level !== f.level) return false;
+        if (f.type !== "all" && item.type !== f.type) return false;
+        if (f.status !== "all") {
+          var s = progress[item.id] || "unmarked";
+          if (s !== f.status) return false;
+        }
+        if (searchLower) {
+          var haystack = ((item.question || "") + " " + (item.area || "")).toLowerCase();
+          if (haystack.indexOf(searchLower) === -1) return false;
+        }
+        return true;
+      });
+    }
+
+    function typeLabel(typeValue) {
+      var match = null;
+      TYPES.forEach(function (t) {
+        if (t.value === typeValue) match = t;
+      });
+      return match ? match.label : typeValue;
+    }
+
+    function render() {
+      if (state.view === "track" && state.trackId) {
+        renderTrackView();
+      } else {
+        renderLanding();
+      }
+    }
+
+    function showLanding() {
+      state.view = "landing";
+      state.trackId = null;
+      render();
+    }
+
+    function showTrack(trackId) {
+      state.view = "track";
+      state.trackId = trackId;
+      state.filters = { area: "all", level: "all", type: "all", status: "all", search: "" };
+      render();
+    }
+
+    function renderLanding() {
+      var tracks = SITE_DATA.tracks;
+      var cardsHtml;
+      if (!tracks.length) {
+        cardsHtml = '<p class="empty-state">No tracks configured yet.</p>';
+      } else {
+        cardsHtml = tracks.map(function (t) {
+          var items = SITE_DATA.data[t.id] || [];
+          var count = items.length;
+          var status = t.status || "unknown";
+          return (
+            '<button class="track-card" data-track-id="' + escapeHtml(t.id) + '">' +
+              '<div class="track-card-header">' +
+                "<h2>" + escapeHtml(t.name || t.id) + "</h2>" +
+                '<span class="badge status-' + escapeHtml(status) + '">' + escapeHtml(status) + "</span>" +
+              "</div>" +
+              '<p class="track-desc">' + escapeHtml(t.description || "") + "</p>" +
+              '<p class="track-count">' + count + " question" + (count === 1 ? "" : "s") + "</p>" +
+            "</button>"
+          );
+        }).join("");
+      }
+
+      app.innerHTML =
+        '<section class="landing">' +
+          "<h1>Interview Prep Study Hub</h1>" +
+          '<p class="subtitle">Pick a track to start studying.</p>' +
+          '<div class="track-grid">' + cardsHtml + "</div>" +
+        "</section>";
+
+      var buttons = app.querySelectorAll(".track-card");
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].addEventListener("click", (function (btn) {
+          return function () { showTrack(btn.getAttribute("data-track-id")); };
+        })(buttons[i]));
+      }
+    }
+
+    function renderTrackHeader(track) {
+      var name = track ? track.name : state.trackId;
+      var desc = track && track.description
+        ? '<p class="subtitle">' + escapeHtml(track.description) + "</p>"
+        : "";
+      return (
+        '<div class="track-toolbar">' +
+          '<button class="back-btn" id="back-btn">&lsaquo; All tracks</button>' +
+          "<div><h1>" + escapeHtml(name) + "</h1>" + desc + "</div>" +
+        "</div>"
+      );
+    }
+
+    function renderFilters(areas, total, filteredCount, progress, allItems) {
+      var counts = computeCounts(allItems, progress);
+      var f = state.filters;
+
+      var areaOptions = '<option value="all"' + (f.area === "all" ? " selected" : "") + ">All</option>" +
+        areas.map(function (a) {
+          return '<option value="' + escapeHtml(a) + '"' + (f.area === a ? " selected" : "") + ">" + escapeHtml(a) + "</option>";
+        }).join("");
+
+      var levelOptions = '<option value="all"' + (f.level === "all" ? " selected" : "") + ">All</option>" +
+        LEVELS.map(function (l) {
+          return '<option value="' + l + '"' + (f.level === l ? " selected" : "") + ">" + l + "</option>";
+        }).join("");
+
+      var typeOptions = '<option value="all"' + (f.type === "all" ? " selected" : "") + ">All</option>" +
+        TYPES.map(function (t) {
+          return '<option value="' + t.value + '"' + (f.type === t.value ? " selected" : "") + ">" + t.label + "</option>";
+        }).join("");
+
+      var statusOptions =
+        '<option value="all"' + (f.status === "all" ? " selected" : "") + ">All</option>" +
+        '<option value="unmarked"' + (f.status === "unmarked" ? " selected" : "") + ">Unmarked (" + counts.unmarked + ")</option>" +
+        '<option value="known"' + (f.status === "known" ? " selected" : "") + ">Known (" + counts.known + ")</option>" +
+        '<option value="review"' + (f.status === "review" ? " selected" : "") + ">Needs review (" + counts.review + ")</option>";
+
+      return (
+        '<div class="filters">' +
+          '<div class="filter-row">' +
+            '<label>Area<select id="filter-area">' + areaOptions + "</select></label>" +
+            '<label>Level<select id="filter-level">' + levelOptions + "</select></label>" +
+            '<label>Type<select id="filter-type">' + typeOptions + "</select></label>" +
+            '<label>Status<select id="filter-status">' + statusOptions + "</select></label>" +
+          "</div>" +
+          '<div class="filter-row">' +
+            '<input type="search" id="filter-search" placeholder="Search questions…" value="' + escapeHtml(f.search) + '" />' +
+            '<span class="result-count">' + filteredCount + " of " + total + " shown</span>" +
+          "</div>" +
+        "</div>"
+      );
+    }
+
+    function renderCard(item, status) {
+      var statusLabel = status === "known" ? "Known" : status === "review" ? "Needs review" : "Unmarked";
+      var optionsHtml = "";
+      if (item.type === "multiple-choice" && Array.isArray(item.options)) {
+        optionsHtml = '<ul class="options-list">' +
+          item.options.map(function (o) { return "<li>" + escapeHtml(o) + "</li>"; }).join("") +
+          "</ul>";
+      }
+
+      var codeHtml = item.code
+        ? '<h3>Code</h3><pre class="code-block"><code>' + escapeHtml(item.code) + "</code></pre>"
+        : "";
+
+      var referencesHtml = "";
+      if (Array.isArray(item.references) && item.references.length) {
+        referencesHtml = '<h3>References</h3><ul class="references-list">' +
+          item.references.map(function (r) {
+            return '<li><a href="' + escapeHtml(r.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(r.label) + "</a></li>";
+          }).join("") +
+          "</ul>";
+      }
+
+      return (
+        '<article class="card status-' + (status || "unmarked") + '" data-item-id="' + escapeHtml(item.id) + '">' +
+          '<div class="card-meta">' +
+            '<span class="badge badge-area">' + escapeHtml(item.area) + "</span>" +
+            '<span class="badge badge-level level-' + escapeHtml(item.level) + '">' + escapeHtml(item.level) + "</span>" +
+            '<span class="badge badge-type">' + escapeHtml(typeLabel(item.type)) + "</span>" +
+            '<span class="status-pill status-pill-' + (status || "unmarked") + '">' + statusLabel + "</span>" +
+          "</div>" +
+          '<button class="question-toggle" aria-expanded="false">' +
+            '<span class="q-text">' + escapeHtml(item.question) + "</span>" +
+            '<span class="chevron" aria-hidden="true">&#9656;</span>' +
+          "</button>" +
+          optionsHtml +
+          '<div class="answer-panel" hidden>' +
+            "<h3>Answer</h3><p>" + escapeHtml(item.answer) + "</p>" +
+            (item.explanation ? "<h3>Why</h3><p>" + escapeHtml(item.explanation) + "</p>" : "") +
+            codeHtml +
+            referencesHtml +
+          "</div>" +
+          '<div class="card-actions">' +
+            '<button class="action-btn known-btn" data-action="known">Mark known</button>' +
+            '<button class="action-btn review-btn" data-action="review">Needs review</button>' +
+            '<button class="action-btn clear-btn" data-action="clear">Clear</button>' +
+          "</div>" +
+        "</article>"
+      );
+    }
+
+    function captureFocus() {
+      var el = document.activeElement;
+      if (el && el.id === "filter-search") {
+        return { id: "filter-search", start: el.selectionStart, end: el.selectionEnd };
+      }
+      return null;
+    }
+
+    function restoreFocus(info) {
+      if (!info) return;
+      var el = document.getElementById(info.id);
+      if (el) {
+        el.focus();
+        try { el.setSelectionRange(info.start, info.end); } catch (e) {}
+      }
+    }
+
+    function renderTrackView() {
+      var focusInfo = captureFocus();
+      var track = getTrackMeta(state.trackId);
+      var allItems = SITE_DATA.data[state.trackId] || [];
+      var progress = loadProgress(state.trackId);
+
+      if (!allItems.length) {
+        app.innerHTML =
+          '<section class="track-view">' +
+            renderTrackHeader(track) +
+            '<div class="empty-state">' +
+              "<p>No questions yet for this track.</p>" +
+              '<p class="empty-sub">Check back once the question bank has been populated.</p>' +
+            "</div>" +
+          "</section>";
+        bindBackButton();
+        return;
+      }
+
+      var areasSet = {};
+      allItems.forEach(function (item) { areasSet[item.area] = true; });
+      var areas = Object.keys(areasSet).sort();
+
+      var filtered = applyFilters(allItems, progress);
+      var listHtml = filtered.length
+        ? filtered.map(function (item) { return renderCard(item, progress[item.id]); }).join("")
+        : '<p class="empty-state-inline">No items match the current filters.</p>';
+
+      app.innerHTML =
+        '<section class="track-view">' +
+          renderTrackHeader(track) +
+          renderFilters(areas, allItems.length, filtered.length, progress, allItems) +
+          '<div class="card-list" id="card-list">' + listHtml + "</div>" +
+        "</section>";
+
+      bindBackButton();
+      bindFilterEvents();
+      bindCardEvents();
+      restoreFocus(focusInfo);
+    }
+
+    function bindBackButton() {
+      var btn = document.getElementById("back-btn");
+      if (btn) btn.addEventListener("click", showLanding);
+    }
+
+    function bindFilterEvents() {
+      var areaSel = document.getElementById("filter-area");
+      var levelSel = document.getElementById("filter-level");
+      var typeSel = document.getElementById("filter-type");
+      var statusSel = document.getElementById("filter-status");
+      var searchInput = document.getElementById("filter-search");
+
+      if (areaSel) areaSel.addEventListener("change", function () { state.filters.area = areaSel.value; renderTrackView(); });
+      if (levelSel) levelSel.addEventListener("change", function () { state.filters.level = levelSel.value; renderTrackView(); });
+      if (typeSel) typeSel.addEventListener("change", function () { state.filters.type = typeSel.value; renderTrackView(); });
+      if (statusSel) statusSel.addEventListener("change", function () { state.filters.status = statusSel.value; renderTrackView(); });
+      if (searchInput) searchInput.addEventListener("input", function () { state.filters.search = searchInput.value; renderTrackView(); });
+    }
+
+    function bindCardEvents() {
+      var list = document.getElementById("card-list");
+      if (!list) return;
+
+      var toggles = list.querySelectorAll(".question-toggle");
+      for (var i = 0; i < toggles.length; i++) {
+        toggles[i].addEventListener("click", function () {
+          var panel = this.parentElement.querySelector(".answer-panel");
+          var expanded = this.getAttribute("aria-expanded") === "true";
+          this.setAttribute("aria-expanded", String(!expanded));
+          panel.hidden = expanded;
+          this.querySelector(".chevron").innerHTML = expanded ? "&#9656;" : "&#9662;";
+        });
+      }
+
+      var actionButtons = list.querySelectorAll(".action-btn");
+      for (var j = 0; j < actionButtons.length; j++) {
+        actionButtons[j].addEventListener("click", function () {
+          var card = this.closest(".card");
+          var itemId = card.getAttribute("data-item-id");
+          var action = this.getAttribute("data-action");
+          var progress = loadProgress(state.trackId);
+          var current = progress[itemId] || "unmarked";
+          var next = action === "clear" ? "unmarked" : (current === action ? "unmarked" : action);
+          if (next === "unmarked") {
+            delete progress[itemId];
+          } else {
+            progress[itemId] = next;
+          }
+          saveProgress(state.trackId, progress);
+          renderTrackView();
+        });
+      }
+    }
+
+    render();
+  })();
+  </script>
+</body>
+</html>

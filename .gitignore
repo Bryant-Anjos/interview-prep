@@ -1,0 +1,17 @@
+# Dependencies (none currently, kept for if a devDependency is ever added)
+node_modules/
+
+# Local config — copy .env.example to .env and edit; .env.example stays tracked
+.env
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor junk
+.vscode/
+.idea/
+
+# Generated build output — reproducible via `npm start` / `npm run build`
+# (node site/build.js), never hand-edited, so it isn't committed.
+site/dist.html

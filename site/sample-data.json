@@ -1,0 +1,138 @@
+[
+  {
+    "id": "components-01",
+    "track": "react-native",
+    "area": "Components",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What is the difference between `View` and `ScrollView` in React Native?",
+    "options": null,
+    "status": "approved",
+    "answer": "`View` is a basic, non-scrolling container for layout. `ScrollView` renders all its children up front and lets the user scroll through content that overflows the screen.",
+    "explanation": "`View` maps to a native container and only lays out what fits; it does not scroll. `ScrollView` renders every child immediately, even ones off-screen, which makes it simple but memory-heavy for long lists — that's why `FlatList`/`SectionList` exist for large or dynamic datasets, since they use windowing to render only what's visible.",
+    "code": null,
+    "references": [
+      { "label": "React Native docs — ScrollView", "url": "https://reactnative.dev/docs/scrollview" }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-02",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "When would you reach for Context API instead of a state management library like Redux or Zustand?",
+    "options": null,
+    "status": "approved",
+    "answer": "Context is a good fit for low-frequency, broadly-shared values like theme, locale, or auth session — state that changes rarely and doesn't need middleware, selectors, or devtools.",
+    "explanation": "Context re-renders every consumer on any value change, so it doesn't scale well to high-frequency or deeply nested state without extra memoization. Dedicated state libraries add selective subscriptions, middleware, and debugging tools that matter once the app's state graph grows complex. Using Context for everything is a common over-application of a tool meant for simple, infrequently-changing global values.",
+    "code": null,
+    "references": [
+      { "label": "React docs — Passing Data Deeply with Context", "url": "https://react.dev/learn/passing-data-deeply-with-context" }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-03",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "This `FlatList` re-renders every row whenever the parent re-renders, even though row data hasn't changed. Fix it.",
+    "options": null,
+    "status": "approved",
+    "answer": "Wrap the row component in `React.memo` and make sure `renderItem` doesn't create a new function/props object on every parent render (e.g. use `useCallback`).",
+    "explanation": "Without memoization, every parent re-render creates a brand-new `renderItem` closure and a new element for each row, so React treats every row as changed even when its underlying data is identical. `React.memo` short-circuits re-rendering when props are shallow-equal, and `useCallback` keeps the `renderItem` reference stable across renders so `FlatList` doesn't think its render function itself changed.",
+    "code": "const Row = React.memo(function Row({ item }) {\n  return <Text>{item.title}</Text>;\n});\n\nfunction List({ data }) {\n  const renderItem = useCallback(({ item }) => <Row item={item} />, []);\n  return <FlatList data={data} renderItem={renderItem} keyExtractor={(i) => i.id} />;\n}",
+    "references": [
+      { "label": "React Native docs — Optimizing FlatList Configuration", "url": "https://reactnative.dev/docs/optimizing-flatlist-configuration" }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "native-modules-04",
+    "track": "react-native",
+    "area": "Native Modules",
+    "level": "Senior",
+    "type": "code-challenge",
+    "question": "Sketch a minimal Turbo Native Module that exposes a synchronous `add(a: number, b: number): number` method to JS.",
+    "options": null,
+    "status": "approved",
+    "answer": "Define a TypeScript spec extending `TurboModule` with the `add` method, codegen the native interface, then implement it natively (Kotlin/Obj-C++) and register it with the TurboModule registry.",
+    "explanation": "TurboModules use codegen to generate strongly-typed native interfaces from a JS spec, replacing the old bridge's untyped, batched, asynchronous JSON messaging with direct, synchronous JSI calls where needed. This removes serialization overhead and lets the module be lazily loaded only when JS first references it.",
+    "code": "// NativeMath.ts\nimport type { TurboModule } from 'react-native';\nimport { TurboModuleRegistry } from 'react-native';\n\nexport interface Spec extends TurboModule {\n  add(a: number, b: number): number;\n}\n\nexport default TurboModuleRegistry.getEnforcing<Spec>('NativeMath');",
+    "references": [
+      { "label": "React Native docs — Turbo Native Modules", "url": "https://reactnative.dev/docs/turbo-native-modules-introduction" }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-05",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Junior",
+    "type": "multiple-choice",
+    "question": "In React Navigation, which hook lets a screen read the params passed to it?",
+    "options": ["useNavigation", "useRoute", "useFocusEffect", "useIsFocused"],
+    "status": "approved",
+    "answer": "useRoute — it returns the route object for the current screen, including `route.params`.",
+    "explanation": "`useNavigation` gives access to the navigator's imperative actions (navigate, goBack, etc.), not the current screen's params. `useRoute` is the hook specifically for reading the active route's `name`, `key`, and `params`. `useFocusEffect` and `useIsFocused` deal with focus lifecycle, not params.",
+    "code": null,
+    "references": [
+      { "label": "React Navigation docs — useRoute", "url": "https://reactnavigation.org/docs/use-route/" }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "testing-06",
+    "track": "react-native",
+    "area": "Testing",
+    "level": "Senior",
+    "type": "multiple-choice",
+    "question": "Which tool is best suited for writing end-to-end tests that drive a real React Native app on a simulator/device, as opposed to testing components in isolation?",
+    "options": ["Jest", "React Native Testing Library", "Detox", "Enzyme"],
+    "status": "approved",
+    "answer": "Detox — it's built specifically for gray-box E2E testing of React Native apps on real simulators/devices.",
+    "explanation": "Jest and React Native Testing Library operate at the unit/component level, rendering components in a JS environment without a real native runtime. Enzyme is a legacy React component-testing library, not RN-aware and largely unmaintained for RN use cases. Detox synchronizes with the native app's event loop and drives it end-to-end the way a real user would, making it the right tool when the interview question is about full user-flow confidence rather than component logic.",
+    "code": null,
+    "references": [
+      { "label": "Detox docs — Introduction", "url": "https://wix.github.io/Detox/docs/introduction/getting-started" }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "architecture-07",
+    "track": "react-native",
+    "area": "Architecture",
+    "level": "Senior",
+    "type": "open-question",
+    "question": "Walk me through how you'd structure a large React Native app to keep feature teams from stepping on each other, and how you'd handle shared code.",
+    "options": null,
+    "status": "approved",
+    "answer": "I'd organize by feature/domain rather than by file type, isolate each feature behind a clear public API (barrel exports), and pull genuinely shared logic (design system, networking, auth) into internal packages consumed by every feature — enforced with lint rules or a monorepo tool so features can't reach into each other's internals.",
+    "explanation": "Type-based structuring (all components/, all screens/, all hooks/) scales poorly once multiple teams touch the same app because unrelated features end up interleaved in the same folders and files. Feature-based structuring with enforced boundaries (e.g. ESLint `import/no-restricted-paths`, Nx/Turborepo module boundaries) keeps changes local to a feature, makes ownership obvious, and turns 'shared code' into a deliberate, reviewed decision instead of an accident of proximity.",
+    "code": null,
+    "references": [
+      { "label": "React Native docs — Architecture Overview", "url": "https://reactnative.dev/architecture/overview" }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "deployment-08",
+    "track": "react-native",
+    "area": "Deployment",
+    "level": "Junior",
+    "type": "open-question",
+    "question": "What's the difference between an OTA update (e.g. via CodePush/Expo Updates) and submitting a new build to the app stores, and when would you use each?",
+    "options": null,
+    "status": "approved",
+    "answer": "OTA updates push new JS/asset bundles directly to installed apps without going through app store review, but they can only change JS-level code. Any change to native code, permissions, or the app binary itself requires a full store submission and review.",
+    "explanation": "The JS bundle and assets can be swapped at runtime because the native shell that hosts them doesn't change, so OTA tools like Expo Updates or CodePush download and apply a new bundle on next launch. Native module additions, new permissions, icon/config changes, or native dependency upgrades all require rebuilding and resubmitting the binary, since those live outside what the JS bundle controls, and store policies (Apple in particular) restrict what OTA updates are allowed to change.",
+    "code": null,
+    "references": [
+      { "label": "Expo docs — EAS Update", "url": "https://docs.expo.dev/eas-update/introduction/" }
+    ],
+    "reviewer_notes": []
+  }
+]

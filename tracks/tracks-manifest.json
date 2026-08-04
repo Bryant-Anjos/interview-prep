@@ -1,0 +1,11 @@
+[
+  {
+    "id": "react-native",
+    "name": "React Native",
+    "description": "Mobile app development with React Native — components, navigation, state, performance, native modules, testing, deployment.",
+    "trackFile": "tracks/react-native/track.md",
+    "dataFile": "tracks/react-native/data/questions.json",
+    "defaultLang": "en",
+    "status": "in-progress"
+  }
+]

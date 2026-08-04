@@ -1,0 +1,1204 @@
+[
+  {
+    "id": "js-ts-fundamentals-01",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What is a closure in JavaScript, and can you give an example of a closure you might use inside a React Native component (outside of hooks)?",
+    "options": null,
+    "status": "approved",
+    "answer": "A closure is a function that keeps access to the variables from its enclosing scope even after that outer function has finished executing. In RN code outside of hooks, a common example is a `debounce` utility: the returned inner function closes over a `timeoutId` variable and the caller's config, so you can wrap something like a search box's `onChangeText` handler to stop firing an API call on every keystroke.",
+    "explanation": "JavaScript functions capture their lexical scope, not a snapshot of variable values — so the inner function always sees the current value of the outer variable, and that variable stays alive in memory as long as the closure exists (this is also why closures can cause memory leaks if you're not careful about what they retain, e.g. holding a reference to a large object or an unmounted component's state). Closures are the mechanism hooks are built on internally (each hook call closes over the fiber's state), but the question asks for a non-hook example: module-level factories, event handler builders, or utilities like `debounce`/`throttle`/memoized caches are the classic case, since they're plain JS patterns usable in a `.ts` utility file, a class component, or even outside React entirely.",
+    "code": "function debounce<A extends unknown[]>(fn: (...args: A) => void, delayMs: number) {\n  let timeoutId: ReturnType<typeof setTimeout>;\n  return (...args: A) => {\n    clearTimeout(timeoutId);\n    timeoutId = setTimeout(() => fn(...args), delayMs);\n  };\n}\n\n// utils/search.ts\nexport const debouncedSearch = debounce((query: string) => searchApi(query), 300);\n\n// <TextInput onChangeText={debouncedSearch} />",
+    "references": [
+      {
+        "label": "MDN — Closures",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "js-ts-fundamentals-02",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What's the practical difference between `let`, `const`, and `var` in modern JavaScript, and why do RN/TypeScript codebases almost always prefer `const`?",
+    "options": null,
+    "status": "approved",
+    "answer": "`var` is function-scoped and hoisted in a way that lets it be accessed (as `undefined`) before its declaration, which causes subtle bugs with loops and closures. `let` and `const` are block-scoped and live in a 'temporal dead zone' until their declaration line, so you can't reference them early. `const` additionally forbids reassigning the binding after initialization. RN/TS codebases default to `const` because it documents intent — 'this reference never changes' — makes bugs from accidental reassignment impossible, and pairs naturally with the immutable-update style React expects (new objects/arrays instead of mutating in place); `let` is reserved for the genuinely small set of variables that must be reassigned, like a loop counter or an accumulator.",
+    "explanation": "`var`'s function-scoping means a `var` declared inside an `if` block or a `for` loop leaks out to the whole function, which is almost never what you want and is a frequent source of stale-closure bugs (e.g. a `for (var i...)` loop capturing the same `i` in every callback). `let`/`const` fix that by scoping to the nearest `{}` block. It's important to note `const` only freezes the *binding*, not the value — `const arr = []` still lets you `arr.push(x)`, it just prevents `arr = otherArr`. For true immutability you'd need `Object.freeze` or an immutable-update library, but in practice React/Redux-style code relies on convention (create new objects instead of mutating) rather than runtime enforcement.",
+    "code": null,
+    "references": [
+      {
+        "label": "MDN — let",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let"
+      },
+      {
+        "label": "MDN — const",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/const"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "js-ts-fundamentals-03",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "How does the JavaScript event loop work, and why can a long synchronous computation on the JS thread make touch gestures feel unresponsive in a React Native app?",
+    "options": null,
+    "status": "approved",
+    "answer": "JavaScript runs on a single thread: the call stack executes one task to completion, then the event loop pulls the next task (a timer, a native event callback, a resolved promise's microtask) off the queue. Nothing else can run while the stack is busy. In React Native, JS execution happens on its own JS thread, separate from the native UI thread that actually renders views — but touch events still have to be dispatched into and handled by that same JS thread. If a synchronous computation (e.g. sorting a huge array, parsing a big JSON blob) is hogging the call stack, queued touch events and their JS callbacks (like an `onPress` handler) simply can't run until it's free, so the UI feels frozen or laggy even though native rendering itself isn't blocked.",
+    "explanation": "It's a common misconception that RN is immune to jank from JS-thread blocking because 'the UI runs natively.' That's true for already-committed native views and for animations driven by `useNativeDriver`/Reanimated worklets, which run off the JS thread — but ordinary gesture recognition, `onPress`, `setState`, and any JS-driven `Animated` value still depend on the JS thread being free to process the event queue. The fix in practice is to move heavy synchronous work off the critical path: break it into chunks with `setTimeout`/`InteractionManager.runAfterInteractions`, memoize/avoid recomputation, or move it to a native module/worklet so the UI thread and gesture handling aren't starved waiting for the JS thread's call stack to drain.",
+    "code": null,
+    "references": [
+      {
+        "label": "MDN — The event loop",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Event_loop"
+      },
+      {
+        "label": "React Native docs — Performance Overview (Responding to touches)",
+        "url": "https://reactnative.dev/docs/performance"
+      }
+    ],
+    "reviewer_notes": [
+      "2026-08-04: Reference mismatch — reactnative.dev/architecture/threading-model does not cover touch-event dispatch or the JS-thread-blocking-touch-handling claim (verified: that page only describes the JS-thread/UI-thread split for the render pipeline, not event handling). The specific claim about TouchableOpacity/onPress becoming unresponsive when the JS thread is busy IS accurate and IS documented, but at a different URL: https://reactnative.dev/docs/performance (see the 'responding to touches' section, which explicitly states the JS thread can't process raw touch events sent from the main thread while busy). Swap the second reference to that URL (or add it alongside the existing one) before resubmitting."
+    ]
+  },
+  {
+    "id": "js-ts-fundamentals-04",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Senior",
+    "type": "conceptual",
+    "question": "How would you explain the difference between microtasks (e.g. Promise callbacks) and macrotasks (e.g. `setTimeout`) to a junior developer, and how does that ordering affect a real bug where a state update seems to happen 'too late'?",
+    "options": null,
+    "status": "approved",
+    "answer": "Macrotasks (`setTimeout`, `setInterval`, native event callbacks) each get pulled off the queue one at a time, with the engine free to do other bookkeeping between them. Microtasks (`Promise.then/catch/finally`, `queueMicrotask`, `async/await` continuations) are drained *completely* — every microtask, including new ones queued while draining — before the engine moves on to the next macrotask. So given `setTimeout(fn, 0)` and `Promise.resolve().then(fn2)` scheduled at the same moment, `fn2` always runs before `fn`, no matter how short the timeout is. A real bug this causes: a developer chains several `.then()` calls that each schedule more promise work, assuming a `setTimeout(() => flushUpdates(), 0)` elsewhere will interleave with them — but it won't run until the entire microtask chain empties, so state updates queued via promises appear to happen 'immediately' while a timeout-based update appears to lag, even though the timeout was scheduled first.",
+    "explanation": "The key mental model for a junior dev: think of microtasks as a VIP queue that must go empty before the macrotask queue is even looked at again — and it's re-checked after every single macrotask, not just at the start. This matters for React Native specifically because a lot of async glue code (API clients, storage libraries, navigation transitions) is promise-based, so an innocuous `await` deep in a call chain can silently reorder when a `setState` actually lands relative to a native event or a `setTimeout`-based timer, producing 'off by one tick' bugs that are hard to reproduce because they depend on exact scheduling, not logic.",
+    "code": "console.log('1: sync');\n\nsetTimeout(() => console.log('4: macrotask (setTimeout)'), 0);\n\nPromise.resolve()\n  .then(() => console.log('2: microtask A'))\n  .then(() => console.log('3: microtask B (queued from A)'));\n\nconsole.log('1.5: sync');\n\n// Output order: 1, 1.5, 2, 3, 4\n// Both microtasks run before the macrotask, even though\n// the setTimeout(fn, 0) was scheduled first.",
+    "references": [
+      {
+        "label": "MDN — The event loop (Microtasks section)",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Event_loop#microtasks"
+      },
+      {
+        "label": "MDN — Microtask guide",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "js-ts-fundamentals-05",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "The following component fetches a user and their posts sequentially, which is slower than necessary since the two requests don't depend on each other:\n\n```ts\nasync function loadProfile(userId: string) {\n  const user = await fetchUser(userId);\n  const posts = await fetchPosts(userId);\n  return { user, posts };\n}\n```\n\nRewrite `loadProfile` so both requests run in parallel, while still handling the case where either request can fail.",
+    "options": null,
+    "status": "approved",
+    "answer": "Start both requests before awaiting either one, then await them together with `Promise.all`, wrapped in a `try/catch` so a failure on either side surfaces as a single handled error instead of an unhandled rejection.",
+    "explanation": "The original code awaits `fetchUser` before even calling `fetchPosts`, so the two network round-trips happen back to back. Calling both functions first (without `await`) kicks off both requests immediately since a `fetch`/async call starts executing synchronously up to its first `await` — only the *waiting* is deferred. `Promise.all` then resolves when both settle, or rejects immediately with the first rejection reason if either fails ('fail-fast'), which is the same semantics as the original sequential code (an error from either request short-circuits the function) but now the requests overlap in time instead of running back-to-back. If you needed partial results even when one request fails, `Promise.allSettled` would be the alternative, at the cost of handling `{status, value|reason}` objects instead of plain values.",
+    "code": "async function loadProfile(userId: string) {\n  try {\n    const [user, posts] = await Promise.all([\n      fetchUser(userId),\n      fetchPosts(userId),\n    ]);\n    return { user, posts };\n  } catch (error) {\n    throw new Error(\n      `Failed to load profile for user ${userId}: ${(error as Error).message}`\n    );\n  }\n}",
+    "references": [
+      {
+        "label": "MDN — Promise.all()",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all"
+      },
+      {
+        "label": "MDN — Promise.allSettled()",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "js-ts-fundamentals-06",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Senior",
+    "type": "code-challenge",
+    "question": "Write a TypeScript utility type `DeepPartial<T>` that makes every property of an object type optional, including nested objects (e.g. so a `DeepPartial<FormState>` can represent a form that's only partially filled in). Add a short comment describing one place in a React Native app where this would be useful.",
+    "options": null,
+    "status": "approved",
+    "answer": "Built-in `Partial<T>` only makes the top-level keys optional — nested object properties stay required. `DeepPartial<T>` needs a recursive conditional/mapped type that re-applies itself to any property whose value is itself an object.",
+    "explanation": "The type must special-case non-object values (primitives, functions) so the recursion has a base case — otherwise `T extends object ? ... : T` would try to map over things like `string` or `Date` that aren't meant to be recursed into. In practice you often also want to special-case arrays and `Date`/`Function` so they aren't turned into `{ [index: number]: DeepPartial<T> }` or have their methods stripped; production-grade versions (like the one shipped in `redux`'s or `utility-types`' toolkits) add those guards. A common RN use case is a theme/config override object — e.g. merging a screen-specific partial theme (`{ colors: { primary: '#fff' } }`) into a full default theme without requiring every token to be specified — or representing a multi-step form's draft state before validation runs.",
+    "code": "type DeepPartial<T> = T extends (infer U)[]\n  ? DeepPartial<U>[]\n  : T extends Function\n  ? T\n  : T extends object\n  ? { [K in keyof T]?: DeepPartial<T[K]> }\n  : T;\n\ninterface FormState {\n  name: string;\n  address: {\n    street: string;\n    city: string;\n  };\n}\n\n// Useful for representing an in-progress, partially-filled form draft\n// (e.g. persisted to AsyncStorage/MMKV between app sessions) without\n// requiring every nested field to be present yet.\nconst draft: DeepPartial<FormState> = {\n  address: { city: 'Lisbon' }, // 'street' and 'name' can be omitted\n};",
+    "references": [
+      {
+        "label": "TypeScript Handbook — Mapped Types",
+        "url": "https://www.typescriptlang.org/docs/handbook/2/mapped-types.html"
+      },
+      {
+        "label": "TypeScript Handbook — Utility Types (Partial<Type>)",
+        "url": "https://www.typescriptlang.org/docs/handbook/utility-types.html#partialtype"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "js-ts-fundamentals-07",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Junior",
+    "type": "multiple-choice",
+    "question": "In JavaScript, what does `typeof null` evaluate to?",
+    "options": [
+      "\"null\"",
+      "\"object\"",
+      "\"undefined\"",
+      "\"boolean\""
+    ],
+    "status": "approved",
+    "answer": "\"object\" — this is a long-standing bug in JavaScript's original implementation that has been kept for backward compatibility ever since.",
+    "explanation": "`\"null\"` is wrong — there is no dedicated `typeof` string for `null`, which is exactly the confusing part. `\"undefined\"` is wrong — that's the type tag for the separate `undefined` value, and `null !== undefined` (though `null == undefined` is `true` under loose equality). `\"boolean\"` is wrong — `null` isn't a boolean. The correct behavior traces back to JS's original value representation, where every value had a type tag, and objects were tagged `0`, which happens to be the same tag used to represent `null` (as a null pointer) — so `typeof` reports `\"object\"`. Because so much existing code depends on this quirk, it's permanently part of the spec; the practical takeaway is to never use `typeof x === 'object'` alone to check for 'is this a real object' — check `x !== null && typeof x === 'object'` instead.",
+    "code": null,
+    "references": [
+      {
+        "label": "MDN — typeof",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/typeof"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "js-ts-fundamentals-08",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "Which statement about TypeScript's structural typing is correct when applied to a React Native component's props?",
+    "options": [
+      "Two prop types are compatible only if they share the same declared type name",
+      "Two prop types are compatible if they have the same shape, regardless of their declared names",
+      "TypeScript ignores extra properties passed to a component as long as required props are present",
+      "Structural typing only applies to primitive types like string and number, not object props"
+    ],
+    "status": "approved",
+    "answer": "\"Two prop types are compatible if they have the same shape, regardless of their declared names\" — TypeScript compares object shapes, not nominal type identity, so a `UserCardProps` and an unrelated `{ name: string; avatarUrl: string }` type are interchangeable if their members line up.",
+    "explanation": "Option 1 is wrong — TypeScript is structurally (not nominally) typed, unlike languages like Java or C#, so the type *name* is irrelevant to compatibility. Option 3 is wrong in the specific case that trips people up: when you pass a JSX object literal directly as props, TypeScript performs 'excess property checking' and *will* flag properties that don't exist on the props interface, even though normal structural compatibility would otherwise allow extra properties on an object assigned through a variable; this is a deliberate carve-out to catch typos like `colour` instead of `color`. Option 4 is wrong — structural typing is exactly how TypeScript compares object and interface shapes, including component props; it's not limited to primitives (primitives compare by simple equality of type, not structurally in the interesting sense).",
+    "code": null,
+    "references": [
+      {
+        "label": "TypeScript Handbook — Type Compatibility",
+        "url": "https://www.typescriptlang.org/docs/handbook/type-compatibility.html"
+      },
+      {
+        "label": "TypeScript Handbook — Excess Property Checks",
+        "url": "https://www.typescriptlang.org/docs/handbook/interfaces.html#excess-property-checks"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "js-ts-fundamentals-09",
+    "track": "react-native",
+    "area": "JS/TS Fundamentals",
+    "level": "Senior",
+    "type": "open-question",
+    "question": "How do you decide how strict to make a new React Native project's TypeScript configuration (`strict`, `noImplicitAny`, `strictNullChecks`, etc.), and how would you introduce stricter typing incrementally into an existing, mostly-untyped codebase without stalling the team?",
+    "options": null,
+    "status": "approved",
+    "answer": "For a brand-new project I turn on `strict: true` (which bundles `strictNullChecks`, `noImplicitAny`, `strictFunctionTypes`, etc.) from day one, since it's far cheaper to write strict code from the start than to retrofit it later, and RN's official TypeScript template ships with it enabled by default. For an existing loosely-typed codebase, I don't flip `strict` globally in one PR — I enable it in `tsconfig.json` but use `// @ts-nocheck` or per-directory `tsconfig` overrides to exempt legacy files, then ratchet strictness up incrementally: new files must pass full strict mode, and old files get cleaned up opportunistically whenever they're touched for other work.",
+    "explanation": "The core tension is that flipping `strict: true` on a large untyped codebase usually produces hundreds or thousands of errors overnight, which either blocks all other work or gets 'solved' with a wave of `any` casts that defeat the purpose. A pragmatic incremental path: (1) turn on `noImplicitAny` first since it catches the most dangerous class of bugs (accidentally-untyped values) with the least churn; (2) use TypeScript's per-file strictness via a `// @ts-strict` convention or split `tsconfig.json`/`tsconfig.strict.json` with `include` globs, so CI enforces strict mode only on files/directories that have already been migrated; (3) track progress with a lint rule or script that fails CI if the count of `any`/`@ts-ignore` usages *increases*, ratcheting the codebase toward stricter rather than looser over time; (4) prioritize migrating the highest-risk surfaces first — API response types and navigation param lists are where untyped code causes the most runtime crashes. The goal is that strictness monotonically increases without ever requiring a single blocking 'big bang' migration PR.",
+    "code": null,
+    "references": [
+      {
+        "label": "TypeScript — tsconfig `strict`",
+        "url": "https://www.typescriptlang.org/tsconfig#strict"
+      },
+      {
+        "label": "React Native docs — TypeScript",
+        "url": "https://reactnative.dev/docs/typescript"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-01",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What is the difference between a functional component and a class component in React Native, and why has the ecosystem largely moved to functional components with hooks?",
+    "options": null,
+    "status": "approved",
+    "answer": "A class component extends `React.Component`, holds state on `this.state`, and uses lifecycle methods like `componentDidMount`/`componentDidUpdate`/`componentWillUnmount`. A functional component is just a plain JS function that returns JSX, and since React 16.8 it can hold state and side effects via hooks (`useState`, `useEffect`, etc.) instead of lifecycle methods and `this`. The ecosystem shifted to functional components because hooks let you share stateful logic between components without the wrapper-hell of higher-order components or render props, avoid the recurring `this`-binding footguns of classes, and let you organize code by concern (e.g. all the subscription logic together) instead of splitting related logic across separate lifecycle methods.",
+    "explanation": "Under the hood, class and function components render to the same reconciler output — hooks aren't a fundamentally different rendering model, they're a different way of attaching state and effects to a fiber. The practical wins are: less boilerplate (no constructor, no manual `.bind(this)`), custom hooks as a first-class code-reuse mechanism (something classes never had a good answer for), and effects that group 'setup' and 'cleanup' together instead of splitting mount logic in `componentDidMount` from teardown logic in `componentWillUnmount`. Class components still work and React has no plans to remove them, but virtually all new RN code, libraries, and documentation (including React Navigation's and Reanimated's APIs) are hooks-first, so classes are now mostly seen in legacy code.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — Your First Component",
+        "url": "https://react.dev/learn/your-first-component"
+      },
+      {
+        "label": "React docs — Reusing Logic with Custom Hooks",
+        "url": "https://react.dev/learn/reusing-logic-with-custom-hooks"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-02",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What does `useState` do, and why does the Rules of Hooks forbid calling it inside a loop, condition, or nested function?",
+    "options": null,
+    "status": "approved",
+    "answer": "`useState` gives a functional component a piece of state that persists between renders, returning the current value and a setter function that schedules a re-render with the new value. Hooks must always be called at the top level, in the exact same order, on every render because React doesn't identify each hook by name — it identifies them by call order/index within the component. If a `useState` call were wrapped in a condition or loop, that order could change between renders, and React would associate the wrong stored state with the wrong hook call, silently corrupting state.",
+    "explanation": "Internally, each function component has a linked list (or array) of 'hook' entries on its fiber, and every hook call just walks to the next entry in that list. There's no key or name involved — it's purely positional. So if render #1 calls `useState`, `useEffect`, `useState` (because a condition was true) and render #2 calls just `useState`, `useEffect` (condition now false), the second `useState`'s slot now gets matched against what used to be the `useEffect` slot's data, corrupting both. This is why the ESLint rule `react-hooks/rules-of-hooks` flags any hook call that isn't unconditionally at the top level of a component or custom hook, before any early `return`.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — useState",
+        "url": "https://react.dev/reference/react/useState"
+      },
+      {
+        "label": "React docs — Rules of Hooks",
+        "url": "https://react.dev/reference/rules/rules-of-hooks"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-03",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "What's the difference between `useEffect` and `useLayoutEffect`, and can you describe a real scenario in a React Native app where you'd actually need `useLayoutEffect`?",
+    "options": null,
+    "status": "approved",
+    "answer": "`useEffect` runs asynchronously after React has committed changes and the screen has been painted, so it never blocks the user from seeing the update. `useLayoutEffect` runs synchronously right after the DOM/native mutations are applied but before the screen paints, which lets you measure or adjust layout without the user ever seeing an intermediate, wrong frame — at the cost of blocking that paint if the work is slow. In RN, a real case is measuring a custom tooltip or dropdown's target element with `ref.measure()`/`measureInWindow` and setting its position in state before the popover is shown, so it appears in the correct spot instead of flashing at `(0,0)` for one frame and then jumping.",
+    "explanation": "Because React Native has no browser DOM, 'paint' here means the point at which the native renderer (Fabric/the old UIManager) actually flushes the computed layout to the native view tree. `useLayoutEffect` still fires synchronously in that window, so it's the right tool when a visual glitch (flicker/jump) would otherwise be visible to the user for one frame — e.g., positioning an overlay based on a measured size, or synchronizing a scroll position before the user sees it. React's own docs recommend defaulting to `useEffect` and reaching for `useLayoutEffect` only when you have this specific measure-then-adjust need, since it can hurt perceived performance if the layout work is expensive.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — useLayoutEffect",
+        "url": "https://react.dev/reference/react/useLayoutEffect"
+      },
+      {
+        "label": "React docs — useEffect",
+        "url": "https://react.dev/reference/react/useEffect"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-04",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Senior",
+    "type": "conceptual",
+    "question": "How would you design a custom hook that shares stateful logic (say, keyboard visibility) across many screens without causing components that don't care about that state to re-render unnecessarily?",
+    "options": null,
+    "status": "approved",
+    "answer": "I'd avoid putting the shared value in React Context, because every consumer of a Context re-renders on every update regardless of which part of the value it uses. Instead I'd keep the keyboard-visibility state in a small external store (a Zustand store, or a hand-rolled subscription object driven off RN's `Keyboard` event emitter) and expose it through `useSyncExternalStore`, so each screen's `useKeyboardVisible()` call subscribes independently and only that specific component re-renders when the value it selected actually changes — components that never call the hook are completely unaffected.",
+    "explanation": "The naive approach — a Context provider wrapping the whole app with `{ isKeyboardVisible }` — re-renders every consumer on every keyboard toggle, even ones with no keyboard-related UI, because Context has no per-field subscription granularity. `useSyncExternalStore` (or a store library that uses it internally, like Zustand) solves this because each call site provides its own selector; React only re-renders the component whose selected slice actually changed between snapshots. In practice: attach a `Keyboard.addListener('keyboardDidShow'/'keyboardDidHide', ...)` pair inside a module-level store, update a plain external `let` value, and call the store's `notify()`/`emit()` on each change; `useSyncExternalStore(store.subscribe, store.getSnapshot)` in the hook handles the rest, including avoiding tearing during concurrent rendering.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — useSyncExternalStore",
+        "url": "https://react.dev/reference/react/useSyncExternalStore"
+      },
+      {
+        "label": "React Native docs — Keyboard",
+        "url": "https://reactnative.dev/docs/keyboard"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-05",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "The following component logs a warning: \"Can't perform a React state update on an unmounted component\":\n\n```tsx\nfunction ProfileScreen({ userId }: { userId: string }) {\n  const [user, setUser] = useState(null);\n\n  useEffect(() => {\n    fetchUser(userId).then(setUser);\n  }, [userId]);\n\n  return <UserView user={user} />;\n}\n```\n\nFix the effect so it doesn't try to update state after the component has unmounted.",
+    "options": null,
+    "status": "approved",
+    "answer": "Add a cleanup function that flips a local flag when the effect is torn down, and check that flag before calling `setUser` in the promise resolution — or, more robustly, use an `AbortController` to actually cancel the in-flight request.",
+    "explanation": "The warning happens because `fetchUser(userId)` keeps running after the component unmounts (e.g. the user navigated away before the response arrived), and when it resolves, `setUser` fires on a component that no longer exists. A boolean flag guard is the minimal fix and stops the *symptom* (calling `setState` on unmounted state), but it doesn't stop the network request itself from completing — for that, pairing it with `AbortController` is the more complete fix, since it actually cancels the fetch and lets `fetchUser` reject cleanly on unmount instead of resolving pointlessly.",
+    "code": "function ProfileScreen({ userId }: { userId: string }) {\n  const [user, setUser] = useState<User | null>(null);\n\n  useEffect(() => {\n    let isActive = true;\n    const controller = new AbortController();\n\n    fetchUser(userId, { signal: controller.signal })\n      .then((data) => {\n        if (isActive) setUser(data);\n      })\n      .catch((error) => {\n        if (isActive && error.name !== 'AbortError') {\n          console.error(error);\n        }\n      });\n\n    return () => {\n      isActive = false;\n      controller.abort();\n    };\n  }, [userId]);\n\n  return <UserView user={user} />;\n}",
+    "references": [
+      {
+        "label": "React docs — useEffect (fetching data / race conditions)",
+        "url": "https://react.dev/reference/react/useEffect#fetching-data-with-effects"
+      },
+      {
+        "label": "MDN — AbortController",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-06",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "Write a custom hook `usePrevious<T>(value: T): T | undefined` that returns whatever value a prop or state variable held on the previous render (and `undefined` on the first render).",
+    "options": null,
+    "status": "approved",
+    "answer": "Use a `useRef` to hold the previous value, and update it inside a `useEffect` — because effects run *after* render, the ref still holds the prior render's value when the component body reads it during the current render, and only gets overwritten to the new value afterward.",
+    "explanation": "The trick is ordering: on render N, the hook body reads `ref.current`, which still holds whatever was set during render N-1's effect (effects from the current render haven't run yet at that point). After the component renders and commits, the `useEffect` fires and updates `ref.current` to the latest `value`, ready to be read as the 'previous' value on render N+1. On the very first render, `ref.current` is still `undefined` (its initial value), which matches the required behavior. Mutating a ref doesn't trigger a re-render, which is exactly what you want here — you're not creating new state, just remembering the last one.",
+    "code": "import { useEffect, useRef } from 'react';\n\nfunction usePrevious<T>(value: T): T | undefined {\n  const ref = useRef<T | undefined>(undefined);\n\n  useEffect(() => {\n    ref.current = value;\n  }, [value]);\n\n  return ref.current;\n}\n\n// Usage:\n// const prevCount = usePrevious(count);\n// useEffect(() => {\n//   if (prevCount !== undefined && count > prevCount) { ... }\n// }, [count, prevCount]);",
+    "references": [
+      {
+        "label": "React docs — useRef",
+        "url": "https://react.dev/reference/react/useRef"
+      },
+      {
+        "label": "React docs — useEffect",
+        "url": "https://react.dev/reference/react/useEffect"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-07",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Junior",
+    "type": "multiple-choice",
+    "question": "Which of the following is a correct statement about the Rules of Hooks?",
+    "options": [
+      "Hooks may be called conditionally as long as the condition doesn't change between renders",
+      "Hooks must always be called in the same order on every render of a component",
+      "Hooks can only be used inside class components that extend React.PureComponent",
+      "Custom hooks must start with 'hook' rather than 'use' to be recognized by the linter"
+    ],
+    "status": "approved",
+    "answer": "\"Hooks must always be called in the same order on every render of a component\" — React matches hook calls to their stored state purely by call order, so that order must be identical every render.",
+    "explanation": "Option 1 is wrong — even a condition that 'never changes in practice' is disallowed by the rule itself; hooks must be unconditional, full stop, precisely because the linter/runtime can't verify your assumption holds across every future code change. Option 3 is wrong and backwards — hooks exist specifically for *functional* components; class components cannot use hooks at all (though a class can render a functional child that does). Option 4 is wrong — the convention is the exact opposite: custom hooks must be named starting with `use` (e.g. `useSomething`) so both the `eslint-plugin-react-hooks` linter and React's own tooling can identify them as hooks and apply the Rules of Hooks checks; 'hook' is not the recognized prefix.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — Rules of Hooks",
+        "url": "https://react.dev/reference/rules/rules-of-hooks"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-08",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Junior",
+    "type": "multiple-choice",
+    "question": "When rendering a list of components, what does React primarily use the `key` prop for?",
+    "options": [
+      "Styling each list item uniquely",
+      "Improving network request caching for list data",
+      "Helping React's reconciler identify which items changed, were added, or were removed between renders",
+      "Setting the accessibility label for each item"
+    ],
+    "status": "approved",
+    "answer": "\"Helping React's reconciler identify which items changed, were added, or were removed between renders\" — `key` gives each list item a stable identity so React can match old and new elements correctly instead of diffing purely by position.",
+    "explanation": "The other options describe things `key` has nothing to do with: it's not a styling hook, doesn't touch network caching, and isn't exposed to accessibility APIs (you'd use `accessibilityLabel` for that). The concrete failure mode `key` prevents: without stable keys (or with array-index keys on a reorderable/filterable list), React can't tell that item 'B' moved from position 2 to position 0 — it just sees 'the thing at index 0 changed', so it may reuse the wrong component instance's local state (e.g. a `TextInput`'s typed value 'sticking' to the wrong row after a reorder) or do unnecessary re-mounts. A stable, unique id (not the array index) as the key lets React correctly preserve or discard state per logical item across renders.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — Rendering Lists (keeping list items in order with key)",
+        "url": "https://react.dev/learn/rendering-lists#keeping-list-items-in-order-with-key"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "components-hooks-09",
+    "track": "react-native",
+    "area": "Components & Hooks",
+    "level": "Senior",
+    "type": "open-question",
+    "question": "Walk me through how you'd refactor a 400-line class component with `componentDidMount`, `componentDidUpdate`, and `componentWillUnmount` into hooks-based functional code, and how you'd verify you haven't changed its behavior in the process.",
+    "options": null,
+    "status": "approved",
+    "answer": "I'd start by inventorying, per lifecycle method, exactly what each block of code depends on and what it sets up/tears down — this tells me how many separate `useEffect`s I actually need, since a single `componentDidMount`/`componentWillUnmount` pair often bundles several unrelated concerns that should become separate effects. Before touching implementation, I'd lock in a safety net: snapshot/characterization tests with React Native Testing Library covering the component's observable behavior (renders, user interactions, callbacks fired) if they don't already exist, then refactor incrementally — extract logical pieces into custom hooks one at a time, running the test suite and doing a manual smoke test after each step, rather than rewriting the whole 400 lines in one pass.",
+    "explanation": "The main behavioral traps in this kind of migration: (1) `componentDidUpdate` often has implicit conditional logic ('only re-run this when `prop.x` changes') that has to become an explicit dependency array — get the deps wrong and you either miss updates or effects fire too often; (2) code that ran once in `componentDidMount` but was *also* invoked from `componentDidUpdate` under certain conditions needs to become one effect with the right dependency array, not two separate effects, or you'll duplicate work; (3) `this.someInstanceVariable` that isn't meant to trigger re-renders maps to `useRef`, not `useState` — using `useState` there would introduce extra re-renders that didn't exist before; (4) cleanup logic split across `componentWillUnmount` needs to be paired back up with the *specific* effect it undoes, since each `useEffect`'s cleanup only relates to that effect, not the whole component's lifetime. I'd verify parity with existing/added tests, a manual QA pass against the pre-refactor build, and ideally splitting the refactor into small reviewable PRs (e.g. one PR per extracted hook) so a regression is easy to bisect.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — Migrating from Class Components",
+        "url": "https://react.dev/reference/react/Component#alternatives"
+      },
+      {
+        "label": "React docs — Synchronizing with Effects",
+        "url": "https://react.dev/learn/synchronizing-with-effects"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-01",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "How does the default `flexDirection` in React Native's Flexbox implementation differ from Flexbox on the web, and why does that trip up developers coming from CSS?",
+    "options": null,
+    "status": "approved",
+    "answer": "In React Native, every `View` defaults to `flexDirection: 'column'`, stacking children top to bottom. On the web, CSS Flexbox defaults to `flexDirection: 'row'`, laying children left to right. Developers coming from web CSS often forget to set `flexDirection: 'row'` explicitly, so a layout they expect to be a horizontal row of items instead renders as a vertical stack, because RN's Yoga-based engine intentionally reverses the web default to match how mobile UIs are typically composed (vertically scrolling screens made of stacked sections).",
+    "explanation": "React Native's layout engine (Yoga) implements the Flexbox spec but deliberately changes several defaults to better fit mobile UI patterns, and `flexDirection` is the one that surprises web developers most often. The official docs also call out that `alignContent` defaults to `flex-start` (not `stretch`) and `flexShrink` defaults to `0` (not `1`) in RN — both departures from CSS defaults for the same reason: mobile layouts are usually vertical stacks of fixed-content sections rather than fluid, wrapping web pages. Since these are just different *defaults*, not different capabilities, any RN layout can still replicate a CSS-like row layout by explicitly setting `flexDirection: 'row'`.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Flexbox",
+        "url": "https://reactnative.dev/docs/flexbox"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-02",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What's the difference between writing inline styles versus using `StyleSheet.create()` in React Native, and does the choice actually affect runtime performance?",
+    "options": null,
+    "status": "approved",
+    "answer": "An inline style (`style={{ padding: 8 }}`) is a plain object literal created fresh on every render, while `StyleSheet.create({...})` builds the style objects once, up front, and returns stable references you reuse across renders. The docs primarily frame `StyleSheet.create` as a code-organization tool for keeping styles readable and separate from render logic, but it also has a real, if secondary, performance angle: because it returns the *same object reference* every render, it plays nicely with `React.memo`/`PureComponent`'s shallow prop comparison, whereas a new inline object literal every render defeats that optimization by always looking 'different'.",
+    "explanation": "It's worth being precise about what `StyleSheet.create` does and doesn't guarantee: the official docs describe it mainly as a way to keep styles co-located and readable, and to get some validation of style property names at creation time. It's not documented as a dramatic runtime optimization on its own. The referential-stability benefit is real but conditional — it only matters if that style object is also passed as a prop to a memoized child that relies on shallow-equality bailout; for a plain `<View style={styles.row}>` that isn't memoized, the difference is negligible. In short: default to `StyleSheet.create` for maintainability and to avoid accidentally breaking memoization elsewhere, but don't expect it alone to fix a real perf problem — the bigger wins come from `React.memo`, list virtualization, and avoiding unnecessary re-renders.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Style",
+        "url": "https://reactnative.dev/docs/style"
+      },
+      {
+        "label": "React Native docs — StyleSheet API",
+        "url": "https://reactnative.dev/docs/stylesheet"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-03",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "How would you build a layout that adapts sensibly to both phone and tablet screen sizes without hardcoding pixel dimensions everywhere?",
+    "options": null,
+    "status": "approved",
+    "answer": "I'd lean on Flexbox proportional sizing (`flex`, percentage widths) instead of fixed pixel values wherever possible, so containers naturally grow and shrink with the available space. For values that genuinely need to react to screen size — like switching from a single-column to a multi-column grid on larger screens — I'd read `useWindowDimensions()` and branch on width breakpoints (e.g. `width >= 768` for tablet), rather than hardcoding device-specific pixel values, since `useWindowDimensions` also re-renders automatically on rotation or window resize (important for split-screen/foldables).",
+    "explanation": "The main anti-pattern to avoid is hardcoding pixel dimensions computed for one reference device and assuming they'll look right everywhere — RN's dimensionless 'points' already normalize for pixel density, but they say nothing about screen size, so a `width: 300` box is a small fraction of a tablet's screen and a huge fraction of a small phone's. A layered approach works well: (1) Flexbox for structural layout so components size themselves relative to their container by default; (2) `aspectRatio` instead of fixed heights for media; (3) breakpoint-based conditional layout (driven by `useWindowDimensions`, not the older static `Dimensions.get()` which doesn't update on rotation) for genuinely different arrangements at different sizes, like a tablet showing a master-detail split view where a phone shows one screen at a time; (4) `SafeAreaView`/`useSafeAreaInsets` so content respects notches and the different aspect ratios across devices.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — useWindowDimensions",
+        "url": "https://reactnative.dev/docs/usewindowdimensions"
+      },
+      {
+        "label": "React Native docs — Flexbox",
+        "url": "https://reactnative.dev/docs/flexbox"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-04",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Senior",
+    "type": "conceptual",
+    "question": "What trade-offs would you weigh when choosing between percentage-based dimensions, the `Dimensions`/`useWindowDimensions` API, and a responsive-scaling library for a design system meant to work across a wide range of device sizes?",
+    "options": null,
+    "status": "approved",
+    "answer": "Percentage-based dimensions are the simplest and cheapest — no JS computation, no re-renders — but they only describe a value relative to its immediate parent, so they can't express 'this should be 16pt on a phone and 24pt on a tablet' on their own. `useWindowDimensions` gives you the actual screen size reactively (updating on rotation/fold), which is the right tool for real breakpoint logic, but overusing it to scale every spacing/font value creates a lot of components that re-render on every dimension change and couples styling logic to a specific hook everywhere. Responsive-scaling libraries (e.g. proportionally scaling a fixed Figma-width design to the runtime screen width) give visual consistency with a specific design mock with very little manual work, but taken too far they make small-device users see everything shrunk down and can fight against platform-native text scaling/accessibility settings, so I'd use them sparingly — for spacing/typography scale, not as a blanket replacement for genuine breakpoint-based layout decisions.",
+    "explanation": "The deeper trade-off is between *visual fidelity to a specific design mock* and *native, accessible, platform-appropriate feel*. A scaling library that linearly interpolates every dimension from a reference width produces pixel-perfect parity with a Figma file across devices, but it can override the user's OS-level font scaling preference if applied to font sizes without care (an accessibility regression), and it makes 'inspect this component in isolation' harder since its rendered size depends on the runtime screen width rather than being self-describing. My default for a design system: build the spacing/typography scale as a fixed, curated token set (e.g. an 8pt-grid scale of `{xs: 4, sm: 8, md: 16, lg: 24, xl: 32}`) rather than continuously scaled values, reserve `useWindowDimensions`-driven breakpoints for genuine layout restructuring (columns, split views), and avoid scaling libraries for anything that should respect the user's accessibility font-size settings.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — useWindowDimensions",
+        "url": "https://reactnative.dev/docs/usewindowdimensions"
+      },
+      {
+        "label": "React Native docs — Dimensions",
+        "url": "https://reactnative.dev/docs/dimensions"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-05",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "Given a card component that renders a fixed-height image (`height: 200`), rewrite its styles so the image keeps a 16:9 aspect ratio on any device width, using Flexbox and the `aspectRatio` style property instead of a fixed height.",
+    "options": null,
+    "status": "approved",
+    "answer": "Drop the fixed `height: 200`, set `width: '100%'` so the image fills its container's width, and add `aspectRatio: 16 / 9` — Yoga then computes the height automatically from the width to preserve that ratio, so the image scales correctly on any device width instead of being cropped or fixed at 200px regardless of screen size.",
+    "explanation": "A fixed `height: 200` combined with a fluid width is exactly what causes distorted or oddly-cropped images across device sizes — a 200px-tall image looks fine on one screen width and stretched/squashed on another because the width:height ratio isn't fixed. `aspectRatio` tells Yoga to compute the *undefined* dimension (in this case height, since only width is set) so that width:height always equals the given ratio; it also plays correctly with `resizeMode: 'cover'`/`'contain'` on the `Image` itself if the source image's own ratio doesn't exactly match 16:9.",
+    "code": "const styles = StyleSheet.create({\n  card: {\n    borderRadius: 12,\n    overflow: 'hidden',\n  },\n  image: {\n    width: '100%',\n    aspectRatio: 16 / 9, // height is computed automatically\n  },\n});\n\nfunction Card({ imageUri }: { imageUri: string }) {\n  return (\n    <View style={styles.card}>\n      <Image source={{ uri: imageUri }} style={styles.image} resizeMode=\"cover\" />\n    </View>\n  );\n}",
+    "references": [
+      {
+        "label": "React Native docs — Layout Props (aspectRatio)",
+        "url": "https://reactnative.dev/docs/layout-props#aspectratio"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-06",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Junior",
+    "type": "code-challenge",
+    "question": "The following styles are meant to lay out three icon buttons in a row with equal spacing between them, but they currently render bunched up on the left:\n\n```ts\nconst styles = StyleSheet.create({\n  row: {\n    flexDirection: 'row',\n  },\n});\n```\n\nFix the `row` style so the three children are evenly spaced across the full width of the row, with equal gaps between and around them.",
+    "options": null,
+    "status": "approved",
+    "answer": "Add `justifyContent: 'space-evenly'` (and make sure the row itself spans the full width, e.g. `width: '100%'`). `space-evenly` is the option that produces genuinely *equal* gaps everywhere — including the edges — which is what 'equal gaps between and around them' calls for; `space-between` would leave no gap at the outer edges, and `space-around` gives the edges only half the gap size of the middle gaps.",
+    "explanation": "The children were bunched on the left because the default `justifyContent` is `flex-start`, which packs items at the start of the main axis and leaves unused space after them. This is a common spot where candidates reach for `space-between` out of habit, but it's the wrong choice here specifically because it puts zero space before the first item and after the last — good for a header with items pinned to each edge, not for the 'equal gaps everywhere' requirement in this question. `space-around` is closer but still gives edge items only half the gap of an interior gap (each item gets equal space *around* it, so adjacent items' half-gaps combine to a full gap, while the outer edges only get one half-gap). `space-evenly` is the one Flexbox value that guarantees every gap — including both outer edges — is identical.",
+    "code": "const styles = StyleSheet.create({\n  row: {\n    flexDirection: 'row',\n    justifyContent: 'space-evenly',\n    width: '100%',\n  },\n});",
+    "references": [
+      {
+        "label": "React Native docs — Layout Props (justifyContent)",
+        "url": "https://reactnative.dev/docs/layout-props#justifycontent"
+      },
+      {
+        "label": "React Native docs — Flexbox",
+        "url": "https://reactnative.dev/docs/flexbox"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-07",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Junior",
+    "type": "multiple-choice",
+    "question": "What is the default value of `flexDirection` for a `View` in React Native?",
+    "options": [
+      "'row'",
+      "'column'",
+      "'row-reverse'",
+      "'column-reverse'"
+    ],
+    "status": "approved",
+    "answer": "'column' — React Native's Flexbox implementation defaults to stacking children vertically, the opposite of the web's default `row`.",
+    "explanation": "'row' is the CSS/web Flexbox default, not React Native's — this is the exact mismatch that trips up developers coming from web CSS. 'row-reverse' and 'column-reverse' are valid `flexDirection` values but neither is the default in either environment; they have to be set explicitly when you want children laid out in reverse order along their axis.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Flexbox",
+        "url": "https://reactnative.dev/docs/flexbox"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-08",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "By default, what unit do numeric `width` and `height` style values represent in React Native?",
+    "options": [
+      "Physical device pixels",
+      "Points/density-independent pixels, similar to CSS logical pixels",
+      "Percentages of the parent container",
+      "A fixed 1 unit = 1mm physical measurement"
+    ],
+    "status": "approved",
+    "answer": "\"Points/density-independent pixels, similar to CSS logical pixels\" — React Native's own docs describe all dimensions as unitless values representing density-independent pixels, not raw physical pixels.",
+    "explanation": "Physical device pixels is wrong — that would mean the same `width: 100` looked like wildly different physical sizes on a low-DPI vs. high-DPI (Retina/2x/3x) screen of the same physical size, which isn't how RN dimensions work; the density-independent unit is exactly what shields you from having to think about a device's pixel ratio for everyday layout. 'Percentages of the parent' is a separate, string-based syntax (`width: '50%'`) — numeric values are absolute density-independent pixels, not relative percentages. The '1 unit = 1mm' option is also wrong; the docs are explicit that there's no universal mapping from points to a physical unit of measurement, since a fixed-dimension component can render at a slightly different physical size across devices — this is a known, accepted trade-off, not a mm-based scale.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Height and Width",
+        "url": "https://reactnative.dev/docs/height-and-width"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "styling-layout-09",
+    "track": "react-native",
+    "area": "Styling & Layout",
+    "level": "Senior",
+    "type": "open-question",
+    "question": "How would you design a scalable theming and spacing system (e.g. an 8pt grid, design tokens) for a React Native app that needs to support light/dark mode and multiple product brands?",
+    "options": null,
+    "status": "approved",
+    "answer": "I'd separate the system into three layers: raw design tokens (a curated color palette, an 8pt-grid spacing scale like `{1: 4, 2: 8, 3: 16, 4: 24, 5: 32}`, and a type scale), semantic tokens that map raw tokens to purpose (`colors.background`, `colors.textPrimary`, `spacing.cardPadding`) so components reference intent rather than raw values, and per-brand/per-mode theme objects that fill in the semantic layer differently. Components consume a `useTheme()` hook backed by a Context whose value swaps based on the active brand and `useColorScheme()`'s light/dark result, so switching either dimension re-themes the whole app without touching component code.",
+    "explanation": "The key design decision is that components should never reference raw values (`#3366FF`, `16`) directly — they reference semantic tokens (`theme.colors.primary`, `theme.spacing.md`), and it's the theme object that resolves those semantic names differently per brand and per color scheme. This makes adding a third brand, or a fourth spacing-scale tweak, a change in one theme-definition file rather than a sweep through every component. For performance, the theme object itself should be memoized (recomputed only when brand/scheme actually changes) since it's read by nearly every styled component and would otherwise force wide re-renders; some teams pre-generate `StyleSheet.create`-based stylesheets per theme rather than inlining theme lookups in every render, trading a bit of memory for fewer per-render style-object allocations. `useColorScheme` (or the `Appearance` API) handles OS-level light/dark detection, while an explicit user override (a manual light/dark toggle stored in app state) should take precedence over the system setting when the app supports one.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Appearance",
+        "url": "https://reactnative.dev/docs/appearance"
+      },
+      {
+        "label": "React Native docs — useColorScheme",
+        "url": "https://reactnative.dev/docs/usecolorscheme"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-01",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What's the functional difference between a Stack Navigator and a Tab Navigator in React Navigation, and when would you nest one inside the other?",
+    "options": null,
+    "status": "approved",
+    "answer": "A Stack Navigator keeps a push/pop history of screens — navigating forward pushes a new screen on top, and the back button/gesture pops it off, which is the right model for a linear drill-down flow (list → detail → edit). A Tab Navigator shows several top-level screens side by side behind a persistent tab bar, with switching tabs just swapping which screen is visible rather than adding to a history. You nest a Stack inside each tab (or occasionally a Tab inside a Stack) when a tab's own content needs its own drill-down flow while keeping the tab bar visible — e.g. a 'Feed' tab whose Stack lets you push into a post's comments, while 'Profile' and 'Search' tabs stay independently navigable.",
+    "explanation": "The most common real-world pattern is 'Stack inside Tabs': each tab gets its own independent Stack Navigator, so pushing a Details screen from the Feed tab doesn't affect what's on top of the Search tab's stack, and the tab bar remains visible and tappable the whole time (tapping the active tab again typically pops that tab's stack back to its root). The reverse, 'Tabs inside a Stack', is used when you want the tab bar to disappear once the user drills into certain content — e.g. a messaging app's tabbed inbox, where opening a specific conversation pushes a full-screen chat view that covers the tab bar entirely. React Navigation's own docs caution against nesting more navigators than necessary, since deep nesting adds complexity (each navigator has its own state, and props/params don't automatically flow across navigator boundaries) and can hurt performance if not done carefully.",
+    "code": "function FeedStack() {\n  return (\n    <Stack.Navigator>\n      <Stack.Screen name=\"FeedList\" component={FeedListScreen} />\n      <Stack.Screen name=\"PostDetails\" component={PostDetailsScreen} />\n    </Stack.Navigator>\n  );\n}\n\nfunction RootTabs() {\n  return (\n    <Tab.Navigator>\n      <Tab.Screen name=\"Feed\" component={FeedStack} />\n      <Tab.Screen name=\"Profile\" component={ProfileScreen} />\n    </Tab.Navigator>\n  );\n}",
+    "references": [
+      {
+        "label": "React Navigation docs — Nesting navigators",
+        "url": "https://reactnavigation.org/docs/nesting-navigators"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-02",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "How do you pass parameters from one screen to another with React Navigation, and how do you read those parameters on the receiving screen?",
+    "options": null,
+    "status": "approved",
+    "answer": "Pass params as the second argument to `navigation.navigate('ScreenName', { ...params })`, keeping them minimal and JSON-serializable (ids and small values, not entire fetched objects). The receiving screen reads them off the `route` prop's `params` field — `route.params.userId` — or via `useRoute()` if it's not receiving `route` as a prop directly.",
+    "explanation": "React Navigation's own guidance is to pass just enough information to identify what to show — e.g. a `userId`, not the whole user object — and let the destination screen fetch or select its own data from a store; this keeps params serializable, which matters for state persistence and deep linking, and avoids screens holding stale copies of data that changes elsewhere. To update a screen's own params in place (without navigating), use `navigation.setParams({...})`, which merges the given keys into the existing params rather than replacing them wholesale.",
+    "code": "// Navigating with params\nnavigation.navigate('Profile', { userId: '42' });\n\n// Reading params on the receiving screen\nfunction ProfileScreen({ route }: { route: RouteProp<RootStackParamList, 'Profile'> }) {\n  const { userId } = route.params;\n  return <UserDetails userId={userId} />;\n}\n\n// Equivalent using the useRoute hook\nfunction ProfileScreen() {\n  const route = useRoute<RouteProp<RootStackParamList, 'Profile'>>();\n  const { userId } = route.params;\n  return <UserDetails userId={userId} />;\n}",
+    "references": [
+      {
+        "label": "React Navigation docs — Passing parameters to routes",
+        "url": "https://reactnavigation.org/docs/params/"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-03",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "How does deep linking work in a React Native app using React Navigation, and what do you need to configure on both iOS and Android for a custom URL scheme or universal link to open the right screen?",
+    "options": null,
+    "status": "approved",
+    "answer": "React Navigation handles deep links via the `linking` prop on `NavigationContainer`, which maps URL patterns to screen names/params (`{ prefixes: ['myapp://', 'https://myapp.com'], config: { screens: { Profile: 'user/:id' } } }`). That JS-level config only fires once the OS has actually handed the URL to your app, so each platform needs its own native registration: on iOS, register the custom scheme in the Xcode project's URL Types (or via `npx uri-scheme add`) for `myapp://` links, and for universal links, enable Associated Domains with an `applinks:` entry plus an `AppDelegate` handler that forwards `continueUserActivity` to `RCTLinkingManager`. On Android, add an intent-filter with your custom `scheme` to `AndroidManifest.xml`'s launch activity (with `launchMode=\"singleTask\"`) for the URL scheme, and a second intent-filter with `android:autoVerify=\"true\"` plus your domain for App Links — both platforms additionally require hosting a verification file on your domain (an Apple App Site Association file for iOS, a Digital Asset Links JSON file for Android) so the OS will trust your app to open that domain's links instead of a browser.",
+    "explanation": "It's a two-layer problem: the native OS layer decides *whether* to hand a given URL to your app at all (that's the Info.plist/AndroidManifest/domain-verification-file configuration), and the JS `linking` config decides *which screen* to show once the URL reaches React Navigation. Custom URL schemes (`myapp://...`) are simpler to set up but can be hijacked by any other app that registers the same scheme and don't work if the app isn't installed; universal links/App Links (real `https://` URLs backed by domain verification) are the more robust production choice because they fall back gracefully to a website when the app isn't installed and can't be squatted on by another app, at the cost of the extra domain-verification-file setup on both platforms.",
+    "code": "// App.tsx\nconst linking = {\n  prefixes: ['myapp://', 'https://myapp.com'],\n  config: {\n    screens: {\n      Profile: 'user/:id',\n      Settings: 'settings',\n    },\n  },\n};\n\n<NavigationContainer linking={linking}>\n  {/* navigators */}\n</NavigationContainer>",
+    "references": [
+      {
+        "label": "React Navigation docs — Deep linking",
+        "url": "https://reactnavigation.org/docs/deep-linking/"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-04",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Senior",
+    "type": "conceptual",
+    "question": "How would you architect navigation for an app with separate authenticated and unauthenticated flows, nested tab/stack navigators, and role-based access to certain screens?",
+    "options": null,
+    "status": "approved",
+    "answer": "I'd use a single root Stack Navigator with the auth/unauth screens rendered conditionally based on auth state — not two separate root navigators switched by an `if` — because React Navigation's own guidance is that a single Stack with a conditional inside gives proper transition animations and automatic redirects when the auth state changes, whereas swapping entire navigator trees causes the whole tree to remount and loses that behavior. Inside the authenticated branch, I'd nest a Tab Navigator for the app's main sections, each tab getting its own Stack for drill-down flows. Role-based access I'd handle as a guard at the screen level (a wrapper component or a custom hook like `useRequireRole('admin')` that redirects or renders a 403 state) rather than trying to build it into the navigator config itself, since React Navigation doesn't have first-class role-based routing — the config only knows about auth state you feed it.",
+    "explanation": "The three-state auth pattern React Navigation recommends is `isLoading` (checking for a persisted token on launch), `isSignedIn`/`userToken` (the resolved auth state), and a splash/loading screen shown while `isLoading` is true so the app doesn't flash the wrong root screen before the token check resolves. A common mistake is manually calling `navigation.navigate('Home')` right after login — with the conditional-screens pattern, React Navigation handles that transition automatically once the screens re-render based on the new auth state, and manually navigating to a screen that's about to be unmounted from the tree can throw. For role-based access on top of that, I'd keep the concern separate: auth state gates which *navigator tree* is even reachable, while role checks gate individual *screens* within the authenticated tree, since mixing the two into the same conditional quickly becomes unmanageable as the number of roles grows.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Navigation docs — Authentication flows",
+        "url": "https://reactnavigation.org/docs/auth-flow/"
+      },
+      {
+        "label": "React Navigation docs — Nesting navigators",
+        "url": "https://reactnavigation.org/docs/nesting-navigators"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-05",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "Write the TypeScript param list type (`RootStackParamList`) for a stack navigator with three screens — `Home` (no params), `Profile` (`{ userId: string }`), and `Settings` (`{ section?: string }`) — and show how you'd type a `useNavigation` call so `navigation.navigate('Profile', { userId })` is fully type-checked.",
+    "options": null,
+    "status": "approved",
+    "answer": "Define a type mapping each route name to its params shape (or `undefined` for no params), pass it as the generic to `createNativeStackNavigator<RootStackParamList>()`, and register the root navigator's type via module augmentation so `useNavigation()`, `Link`, etc. infer it everywhere without manual type parameters.",
+    "explanation": "Screens that receive `route`/`navigation` as props should use the navigator-specific screen-prop type (`NativeStackScreenProps<RootStackParamList, 'Profile'>`) so both are typed together. For `useNavigation()` calls anywhere else in the tree, React Navigation's current docs recommend module-augmenting `@react-navigation/native`'s `RootNavigator` interface with the root stack's type rather than annotating every `useNavigation<T>()` call by hand — that single declaration makes `navigation.navigate('Profile', { userId })` type-check globally, catching both a misspelled route name and a missing/mistyped `userId` param at compile time.",
+    "code": "type RootStackParamList = {\n  Home: undefined;\n  Profile: { userId: string };\n  Settings: { section?: string };\n};\n\nimport { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';\n\nconst RootStack = createNativeStackNavigator<RootStackParamList>();\n\n// Global module augmentation so useNavigation()/Link/etc. are typed everywhere\ntype RootStackType = typeof RootStack;\ndeclare module '@react-navigation/native' {\n  interface RootNavigator extends RootStackType {}\n}\n\n// Typing a specific screen's route + navigation together\ntype ProfileScreenProps = NativeStackScreenProps<RootStackParamList, 'Profile'>;\nfunction ProfileScreen({ route, navigation }: ProfileScreenProps) {\n  const { userId } = route.params; // fully typed\n  return null;\n}\n\n// Elsewhere, a plain useNavigation() call is now type-checked globally\nfunction SomeButton({ userId }: { userId: string }) {\n  const navigation = useNavigation();\n  return (\n    <Button title=\"Open profile\" onPress={() => navigation.navigate('Profile', { userId })} />\n  );\n}",
+    "references": [
+      {
+        "label": "React Navigation docs — TypeScript",
+        "url": "https://reactnavigation.org/docs/typescript/"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-06",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "After a user logs out from a screen buried several levels deep in the navigation stack, the app should discard all navigation history and land cleanly on the `Home` screen. Implement this using React Navigation's navigation state reset APIs.",
+    "options": null,
+    "status": "approved",
+    "answer": "Dispatch a `CommonActions.reset` (or the equivalent `navigation.reset(...)`) action with a new state containing only the `Home` route at index 0 — this replaces the entire navigation state outright, so the previous screens are gone from history and the back button/gesture has nothing to go back to.",
+    "explanation": "A plain `navigation.navigate('Home')` or even `navigation.popToTop()` isn't enough here because they still leave the rest of the stack underneath — popToTop only pops back to the first screen *of the current stack*, it doesn't discard state across nested navigators or unrelated stacks the way a full reset does. `reset` takes an explicit `{ index, routes }` describing the entire new state you want, so setting `index: 0` with a single `{ name: 'Home' }` route means there is nothing before or after it in history. In an app using the conditional-auth-flow pattern, logging out is usually better modeled as flipping the auth state (so the whole authenticated navigator unmounts and the sign-in screen renders instead) rather than manually resetting — but for cases where you stay within the same navigator and just need to clear history back to one screen, `reset` is the direct tool.",
+    "code": "import { CommonActions } from '@react-navigation/native';\n\nfunction handleLogout(navigation: NavigationProp<RootStackParamList>) {\n  signOut(); // clear auth token / storage\n\n  navigation.dispatch(\n    CommonActions.reset({\n      index: 0,\n      routes: [{ name: 'Home' }],\n    })\n  );\n}",
+    "references": [
+      {
+        "label": "React Navigation docs — CommonActions (reset)",
+        "url": "https://reactnavigation.org/docs/navigation-actions/"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-07",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "Which React Navigation hook lets a screen run logic specifically when that screen comes back into focus (e.g., navigating back to it from another screen)?",
+    "options": [
+      "useEffect",
+      "useIsFocused or useFocusEffect",
+      "useNavigationState",
+      "useRoute"
+    ],
+    "status": "approved",
+    "answer": "\"useIsFocused or useFocusEffect\" — both fire based on a screen's focus state; `useIsFocused` returns a reactive boolean you can branch on in render, while `useFocusEffect` runs an effect (with an optional cleanup) every time the screen focuses/unfocuses, mirroring `useEffect`'s shape.",
+    "explanation": "`useEffect` alone is wrong for this purpose — it only reruns based on its dependency array changing, with no awareness of navigation focus at all, so a screen that's still mounted (common in Stack/Tab navigators, which keep prior screens mounted) wouldn't get notified when the user navigates back to it. `useNavigationState` is for reading the raw navigation state tree (e.g. the list of routes), not for detecting focus. `useRoute` just gives you the current screen's `route` object (name, params, key) and has nothing to do with focus timing. The two correct hooks serve different needs: `useFocusEffect` for imperative side effects (subscribing to a listener, refetching data) on focus/blur, and `useIsFocused` when you need the boolean value inline in render logic, e.g. to pause a video only while its screen isn't focused.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Navigation docs — useFocusEffect",
+        "url": "https://reactnavigation.org/docs/use-focus-effect/"
+      },
+      {
+        "label": "React Navigation docs — useIsFocused",
+        "url": "https://reactnavigation.org/docs/use-is-focused/"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "navigation-08",
+    "track": "react-native",
+    "area": "Navigation",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "What is the primary purpose of the `linking` config object passed to `NavigationContainer`?",
+    "options": [
+      "Configuring the color theme shared across all navigators",
+      "Mapping deep link URLs to specific screens and their params",
+      "Enabling gesture-based swipe navigation between tabs",
+      "Persisting the navigation state to AsyncStorage automatically"
+    ],
+    "status": "approved",
+    "answer": "\"Mapping deep link URLs to specific screens and their params\" — the `linking` config tells `NavigationContainer` how to translate an incoming URL (or, on web, the browser's address bar) into a specific screen and its route params.",
+    "explanation": "It has nothing to do with theming, gestures, or persistence — those are separate concerns handled elsewhere (theming via a `theme` prop, gestures via each navigator's own gesture config, and state persistence via a separate `onStateChange`/`initialState` pairing with your own storage, not `linking`). Concretely, `linking.prefixes` lists the URL schemes/domains your app should respond to (`myapp://`, `https://myapp.com`), and `linking.config.screens` maps route names to URL path patterns (`{ Profile: 'user/:id' }`), so opening `myapp://user/42` navigates straight to the `Profile` screen with `params: { id: '42' }`. On web builds, the same config also keeps the browser's URL bar in sync with in-app navigation via the History API.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Navigation docs — Configuring links",
+        "url": "https://reactnavigation.org/docs/configuring-links/"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-01",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "A FlatList rendering 500 items starts to stutter when scrolled quickly. What are the first few FlatList props you'd check or tune, and why?",
+    "options": null,
+    "status": "approved",
+    "answer": "First I'd check `keyExtractor` (a stable, unique key per item — not the array index if the list can reorder/filter), then whether `renderItem` and the row component are memoized (`React.memo` plus stable callback props via `useCallback`, so unchanged rows don't re-render), and then the tuning props that affect how much work happens per scroll frame: `getItemLayout` if every row is a fixed height, and the batching props `initialNumToRender`/`maxToRenderPerBatch`/`windowSize` to control how much gets rendered ahead of the visible viewport.",
+    "explanation": "A `FlatList` is already virtualized — it only mounts items near the visible viewport — so stutter usually comes from either (a) the *work per item* being too expensive (unmemoized row components re-rendering unnecessarily, or heavy synchronous work inside `renderItem`), or (b) the *virtualization window* being tuned wrong for the content (rendering too much ahead of time floods the JS thread during fast scrolling, while rendering too little causes visible blank cells). `getItemLayout` is a particularly high-leverage fix when applicable, since it lets FlatList skip an async layout-measurement pass entirely and jump straight to any offset (also enabling `scrollToIndex`); `removeClippedSubviews` (default `true` on Android) can help further by detaching offscreen native views, though it has known issues with absolutely-positioned or transformed children on iOS.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Optimizing FlatList Configuration",
+        "url": "https://reactnative.dev/docs/optimizing-flatlist-configuration"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-02",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "What's the difference between `React.memo`, `useMemo`, and `useCallback`, and when does using them actually help performance versus just add overhead?",
+    "options": null,
+    "status": "approved",
+    "answer": "`React.memo` wraps a component and skips re-rendering it when its props are shallow-equal to the last render (it still re-renders on its own state or context changes). `useMemo` caches the *result* of an expensive computation between renders, recomputing only when its dependencies change. `useCallback` caches a *function reference* itself, so the same function identity is reused across renders instead of a new closure being created every time. They only pay off when two things are both true: the wrapped work is genuinely expensive (or the referential stability specifically matters, e.g. as a prop to a memoized child or a `useEffect` dependency), and the inputs actually stay the same often enough for the cache to be hit — wrapping cheap components/values in memoization adds comparison overhead and code complexity for no benefit, and can even make things slightly slower.",
+    "explanation": "A common trap is memoizing a component with `React.memo` while still passing it a prop that's a new object/array/function literal created inline on every render (`style={{ padding: 8 }}`, `onPress={() => doThing()}`) — the shallow-equality check fails every time regardless, so the memoization does nothing except add a wasted comparison. That's exactly why `useCallback`/`useMemo` are paired with `React.memo` in practice: memoizing the child alone isn't enough if its inputs are re-created every render. React's own guidance is to profile before reaching for these hooks — default to simple, unmemoized code, and add memoization specifically where profiling (React DevTools Profiler / Flipper) shows a component re-rendering often with unchanged props and doing real work in that render.",
+    "code": "const ProductCard = React.memo(function ProductCard({\n  product,\n  onPress,\n}: {\n  product: Product;\n  onPress: (id: string) => void;\n}) {\n  return <Card title={product.name} onPress={() => onPress(product.id)} />;\n});\n\nfunction ProductList({ products }: { products: Product[] }) {\n  // useCallback keeps this function reference stable across renders,\n  // so ProductCard's React.memo check actually has a chance to succeed.\n  const handlePress = useCallback((id: string) => {\n    navigation.navigate('ProductDetails', { id });\n  }, [navigation]);\n\n  return (\n    <FlatList\n      data={products}\n      keyExtractor={(p) => p.id}\n      renderItem={({ item }) => <ProductCard product={item} onPress={handlePress} />}\n    />\n  );\n}",
+    "references": [
+      {
+        "label": "React docs — memo",
+        "url": "https://react.dev/reference/react/memo"
+      },
+      {
+        "label": "React docs — useCallback",
+        "url": "https://react.dev/reference/react/useCallback"
+      },
+      {
+        "label": "React docs — useMemo",
+        "url": "https://react.dev/reference/react/useMemo"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-03",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "What is Hermes, and how does enabling it typically affect a React Native app's startup time and memory usage?",
+    "options": null,
+    "status": "approved",
+    "answer": "Hermes is Meta's open-source JavaScript engine built specifically for React Native, and it's the default engine as of current React Native releases (no extra setup needed). Its key trick is compiling JS to Hermes bytecode ahead of time at build time, so the app doesn't have to parse and compile raw JavaScript on every cold start — the docs report this typically improves startup time and reduces memory usage compared to running the same app on JavaScriptCore, especially noticeable on lower-end Android devices where JS parsing used to be a real bottleneck.",
+    "explanation": "The 'ahead of time' part matters: with a traditional JS engine, the device has to parse and JIT-compile your whole bundle's JS text at startup every time; Hermes shifts that cost to build time, shipping a precompiled `.hbc` bytecode file that the runtime can start executing close to immediately. This trades a slightly larger/slower build step for a consistently faster, more memory-efficient runtime, which is why the official recommendation is to always test these effects in a release build — development builds don't reflect Hermes' real startup/memory profile since dev builds skip some production optimizations. Because it's now the default, most currently-created RN apps already get these benefits without any configuration; you'd only encounter the older JavaScriptCore engine in an app that's explicitly opted out or hasn't upgraded in a long time.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Hermes",
+        "url": "https://reactnative.dev/docs/hermes"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-04",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Senior",
+    "type": "conceptual",
+    "question": "How would you go about reducing a React Native app's JS bundle size, and what tools would you use to identify what's contributing the most weight?",
+    "options": null,
+    "status": "approved",
+    "answer": "First I'd measure, not guess: run a Metro bundle analysis (e.g. `npx react-native bundle` with `--sourcemap-output` fed into `source-map-explorer` or a similar visualizer) to see which packages/modules actually take up the most space in the final bundle. From there, the highest-leverage fixes are usually replacing a handful of oversized dependencies (a full-featured date/utility library where a smaller alternative or a few native `Intl` calls would do, or a UI kit importing every icon when only a handful are used), lazy-loading screen-level components with `React.lazy`/`Suspense` so code not needed at startup isn't parsed then, and enabling Metro's `inlineRequires` so `require()` calls are deferred until first use instead of eagerly evaluated at bundle load.",
+    "explanation": "Hermes changes the shape of this problem somewhat: because it precompiles to bytecode ahead of time, the traditional 'RAM bundles' technique (splitting the bundle into per-module chunks parsed only when executed) is now explicitly documented as unnecessary and unsupported when Hermes is enabled — Hermes bytecode is already loaded on-demand. So the current guidance centers on (1) using Hermes itself as the primary lever, (2) lazy-loading rarely-needed screens/components rather than bundling everything eagerly, (3) `inlineRequires` for cheap wins on modules that aren't needed at startup, and (4) actually auditing dependency weight with a bundle visualizer rather than assuming which packages are heavy — it's common to find one unexpectedly large transitive dependency (a moment/lodash-style library pulled in for one function) contributing disproportionately.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Optimizing JavaScript loading",
+        "url": "https://reactnative.dev/docs/optimizing-javascript-loading"
+      },
+      {
+        "label": "React Native docs — Hermes",
+        "url": "https://reactnative.dev/docs/hermes"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-05",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "A `ProductCard` component re-renders every time its parent `ProductList` re-renders, even when that specific product's data hasn't changed. Refactor `ProductCard` and its parent so `ProductCard` only re-renders when its own props actually change.",
+    "options": null,
+    "status": "approved",
+    "answer": "Wrap `ProductCard` in `React.memo` so it skips re-rendering when its own props haven't changed, and make sure `ProductList` actually passes it stable props — the specific `product` object for that row (not a freshly-derived object built inline every render) and any callback props wrapped in `useCallback` so they keep the same reference across `ProductList` re-renders.",
+    "explanation": "`React.memo` alone is not sufficient if the parent keeps handing the child new object/function references on every render — the shallow-equality check that `memo` performs will always see 'different' props and re-render anyway, which is the single most common reason memoization 'doesn't work.' The fix has two matched halves: `ProductCard` needs to be wrapped in `memo`, and `ProductList` needs to stop creating new inline objects/closures for that row's props on every render (extracting a stable per-item callback via `useCallback`, and passing `item` directly from `renderItem` rather than spreading/reshaping it into a new object each time).",
+    "code": "const ProductCard = React.memo(function ProductCard({\n  product,\n  onAddToCart,\n}: {\n  product: Product;\n  onAddToCart: (id: string) => void;\n}) {\n  return (\n    <Card>\n      <Text>{product.name}</Text>\n      <Button title=\"Add to cart\" onPress={() => onAddToCart(product.id)} />\n    </Card>\n  );\n});\n\nfunction ProductList({ products }: { products: Product[] }) {\n  const handleAddToCart = useCallback((id: string) => {\n    addToCart(id);\n  }, []);\n\n  return (\n    <FlatList\n      data={products}\n      keyExtractor={(item) => item.id}\n      renderItem={({ item }) => (\n        <ProductCard product={item} onAddToCart={handleAddToCart} />\n      )}\n    />\n  );\n}",
+    "references": [
+      {
+        "label": "React docs — memo",
+        "url": "https://react.dev/reference/react/memo"
+      },
+      {
+        "label": "React docs — useCallback",
+        "url": "https://react.dev/reference/react/useCallback"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-06",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Senior",
+    "type": "code-challenge",
+    "question": "Given a `FlatList` rendering list items with images and several nested components that currently has visible scroll jank, rewrite its configuration to make correct use of `getItemLayout`, `windowSize`, `removeClippedSubviews`, and `keyExtractor` to improve scroll performance.",
+    "options": null,
+    "status": "approved",
+    "answer": "Give every row a stable, unique `keyExtractor` (an id field, not the array index); add `getItemLayout` if rows share a fixed height so FlatList can skip the async layout-measurement pass and jump straight to any offset; tune `windowSize` down from its default if the rows are heavy (images, nested components) to shrink how much off-screen content is kept mounted at once, trading a bit more blank-space risk for materially less memory/CPU pressure; and enable `removeClippedSubviews` (already default on Android) to detach off-screen native views from the hierarchy, while double-checking it doesn't clip anything using absolute positioning or transforms, which is a known iOS pitfall of that flag.",
+    "explanation": "`getItemLayout` is the single highest-leverage prop for a fixed-height list because it removes an entire async measurement round-trip per item — FlatList no longer has to wait for a row to render before knowing where the next one starts. `windowSize` (measured in viewport heights, default 21 — 10 above, 10 below, plus 1 visible) directly trades memory for blank-space risk: lowering it reduces how many expensive image-heavy rows are mounted simultaneously, which matters a lot for this scenario since each row carries images and nested components; too low a value, though, means fast flicks can outrun the render window and show blank cells briefly. `removeClippedSubviews` gives a further native-side assist by detaching (not destroying) offscreen views from the native tree, reducing the work the native renderer has to do, but it's worth verifying visually on iOS since it has documented issues with certain layouts.",
+    "code": "const ITEM_HEIGHT = 96;\n\nfunction ProductList({ products }: { products: Product[] }) {\n  return (\n    <FlatList\n      data={products}\n      keyExtractor={(item) => item.id}\n      renderItem={({ item }) => <ProductRow product={item} />}\n      getItemLayout={(_, index) => ({\n        length: ITEM_HEIGHT,\n        offset: ITEM_HEIGHT * index,\n        index,\n      })}\n      windowSize={5}\n      maxToRenderPerBatch={8}\n      initialNumToRender={8}\n      removeClippedSubviews\n    />\n  );\n}\n\nconst ProductRow = React.memo(function ProductRow({ product }: { product: Product }) {\n  return (\n    <View style={{ height: ITEM_HEIGHT, flexDirection: 'row' }}>\n      <Image source={{ uri: product.imageUrl }} style={{ width: 80, height: 80 }} />\n      <Text>{product.name}</Text>\n    </View>\n  );\n});",
+    "references": [
+      {
+        "label": "React Native docs — Optimizing FlatList Configuration",
+        "url": "https://reactnative.dev/docs/optimizing-flatlist-configuration"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-07",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "Which FlatList prop lets React Native skip the expensive per-item layout measurement pass, assuming all items share the same known height?",
+    "options": [
+      "initialNumToRender",
+      "getItemLayout",
+      "windowSize",
+      "removeClippedSubviews"
+    ],
+    "status": "approved",
+    "answer": "\"getItemLayout\" — it lets you tell FlatList each item's exact size/offset up front, so it can skip the async layout-measurement pass entirely for lists where every item is a known, fixed size.",
+    "explanation": "`initialNumToRender` only controls how many items are rendered on first mount, not whether measurement is skipped. `windowSize` controls how large the render window around the viewport is, again independent of the measurement strategy. `removeClippedSubviews` is a native-view-detachment optimization, unrelated to layout measurement. `getItemLayout` is the one prop specifically documented as removing the need for dynamic measurement — it also unlocks reliable `scrollToIndex`/`scrollToItem` behavior, since FlatList can compute any item's position analytically instead of needing it to have already been measured.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Optimizing FlatList Configuration (getItemLayout)",
+        "url": "https://reactnative.dev/docs/optimizing-flatlist-configuration"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-08",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "What is the primary performance benefit of the Hermes JavaScript engine over JavaScriptCore for React Native apps on Android?",
+    "options": [
+      "Hermes compiles JavaScript to native ARM machine code ahead of time",
+      "Hermes precompiles JS to bytecode ahead of time, reducing parse/compile time and improving startup and memory footprint",
+      "Hermes eliminates the need for a JS thread entirely",
+      "Hermes automatically parallelizes all JavaScript execution across CPU cores"
+    ],
+    "status": "approved",
+    "answer": "\"Hermes precompiles JS to bytecode ahead of time, reducing parse/compile time and improving startup and memory footprint\" — that ahead-of-time compilation step is the core mechanism behind Hermes' documented startup and memory advantages.",
+    "explanation": "Hermes doesn't compile to native ARM machine code (that would be a full AOT/JIT native compiler, not a bytecode VM) — it compiles to its own bytecode format, which is still interpreted by the Hermes VM at runtime, just without needing to parse/compile raw JS text first. It doesn't eliminate the JS thread — JS still runs on a dedicated JS thread, Hermes just changes how efficiently that thread starts executing. And it doesn't parallelize JS execution across cores — JavaScript remains single-threaded by design regardless of engine; Hermes' wins are in startup latency and memory, not multi-core parallelism.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Hermes",
+        "url": "https://reactnative.dev/docs/hermes"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "performance-09",
+    "track": "react-native",
+    "area": "Performance",
+    "level": "Senior",
+    "type": "open-question",
+    "question": "Walk me through your process for diagnosing and fixing a React Native screen that users report as 'laggy' — what tools do you reach for first, and how do you decide whether the bottleneck is JS-thread, UI-thread, or native-bridge related?",
+    "options": null,
+    "status": "approved",
+    "answer": "I start by reproducing the lag on a release build (not dev mode, which has extra overhead that skews perception), then use React DevTools Profiler or Flipper's performance tooling to see whether components are re-rendering excessively during the janky interaction. If renders look fine, I check native tooling — Android's Perfetto/Systrace or Xcode Instruments — to see which thread (JS thread doing heavy synchronous work, UI/main thread doing expensive layout or overdraw, or the bridge/JSI boundary being hammered with too many small calls) is actually saturated during the janky window, since 'laggy' can mean any of those three and the fix is different for each.",
+    "explanation": "The diagnostic split matters because the fixes don't overlap: JS-thread bottlenecks (heavy synchronous computation, too many re-renders, unmemoized expensive components) are fixed with memoization, moving work off the critical path (`InteractionManager`, chunking), or offloading to a worklet/native module; UI-thread bottlenecks (deep view hierarchies, expensive layout passes, unnecessary overdraw from stacked semi-transparent views) are fixed by simplifying the native view tree, using `getItemLayout`-tuned lists, and reducing shadow/blur effects; bridge-related bottlenecks (frequent small JS↔native calls, e.g. driving an `Animated` value without `useNativeDriver` on every frame) are fixed by moving that communication off the bridge entirely — `useNativeDriver: true`, or migrating to Reanimated worklets that run on the UI thread without round-tripping through JS at all. I treat the profiler output as the source of truth rather than guessing, since the same symptom ('the screen feels janky') can come from any of the three, and optimizing the wrong layer wastes effort without moving the frame rate.",
+    "code": null,
+    "references": [
+      {
+        "label": "React Native docs — Performance Overview",
+        "url": "https://reactnative.dev/docs/performance"
+      },
+      {
+        "label": "React Native docs — Profiling",
+        "url": "https://reactnative.dev/docs/profiling"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-management-01",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Junior",
+    "type": "conceptual",
+    "question": "What is React's Context API, and what kind of state is it well-suited for versus poorly suited for?",
+    "options": null,
+    "status": "approved",
+    "answer": "Context is React's built-in way to pass a value down the tree without threading it through props at every level — you create it with `createContext`, provide a value higher up, and read it with `useContext` anywhere below. It's well suited for state that's genuinely global-ish but changes rarely: theme, authenticated user, locale, feature flags. It's poorly suited for state that changes frequently (many times per second, like a scroll position or a live counter) or that only a small, unpredictable subset of the tree actually needs, because every component that consumes a Context re-renders on every update to that Context's value, regardless of which part of it they actually use.",
+    "explanation": "The re-render behavior is the crux of it: Context has no per-field subscription granularity — if you put `{ user, theme, cartCount }` in one Context, a component that only reads `theme` still re-renders every time `cartCount` changes, because React can't tell the two apart without you splitting them into separate Contexts. For low-frequency global values this cost is invisible; for high-frequency values (scroll position, animated values, live form state shared across many fields) it becomes a real performance problem, which is why those cases usually move to a dedicated state library (Zustand, Redux) with per-selector subscriptions, or in RN specifically, to Reanimated shared values that bypass React's render cycle entirely for UI-thread-driven values.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — Passing Data Deeply with Context",
+        "url": "https://react.dev/learn/passing-data-deeply-with-context"
+      },
+      {
+        "label": "React docs — Scaling Up with Reducer and Context",
+        "url": "https://react.dev/learn/scaling-up-with-reducer-and-context"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-management-02",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Mid",
+    "type": "conceptual",
+    "question": "What problem does Redux Toolkit solve that hand-written Redux made painful, and what does `createSlice` generate for you under the hood?",
+    "options": null,
+    "status": "approved",
+    "answer": "Hand-written Redux required a lot of boilerplate to stay correct: manually writing action type constants, action creators, and a `switch`-based reducer that returns a brand-new object/array on every branch to preserve immutability — forgetting a single spread was a common, hard-to-spot bug. `createSlice` generates the reducer, matching action creators, and string action types for you from a single object of 'case reducer' functions, and it wraps each reducer with Immer so you can write code that *looks* like direct mutation (`state.items.push(item)`) while Immer produces a correctly immutable update behind the scenes.",
+    "explanation": "Concretely, `createSlice({ name, initialState, reducers })` returns `{ reducer, actions }`: `reducer` is ready to plug into `configureStore`, and `actions` contains one auto-generated action creator per key in `reducers`, each producing an action typed `\"sliceName/reducerName\"` (visible in Redux DevTools). The Immer integration is scoped to *inside* each case reducer only — you're still expected to treat state as immutable everywhere else (e.g. in selectors), and Immer only intercepts the draft object it hands you, so returning a completely new value from a case reducer (instead of mutating the draft) still works too, since Immer supports both styles. This combination is what let the Redux team position Redux Toolkit as 'the official, opinionated way to write Redux' — it removes almost all of the ceremony that made hand-written Redux tedious without changing Redux's underlying single-store, reducer-based model.",
+    "code": "import { createSlice, PayloadAction } from '@reduxjs/toolkit';\n\ninterface CartState {\n  items: { id: string; qty: number }[];\n}\n\nconst cartSlice = createSlice({\n  name: 'cart',\n  initialState: { items: [] } as CartState,\n  reducers: {\n    addItem(state, action: PayloadAction<{ id: string; qty: number }>) {\n      state.items.push(action.payload); // looks mutable, Immer makes it immutable\n    },\n    removeItem(state, action: PayloadAction<string>) {\n      state.items = state.items.filter((item) => item.id !== action.payload);\n    },\n  },\n});\n\nexport const { addItem, removeItem } = cartSlice.actions;\nexport default cartSlice.reducer;",
+    "references": [
+      {
+        "label": "Redux Toolkit docs — createSlice",
+        "url": "https://redux-toolkit.js.org/api/createSlice"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-management-04",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Senior",
+    "type": "conceptual",
+    "question": "How do you decide where a given piece of state should live — local component state, Context, or a global store like Redux/Zustand — in a mid-size React Native app?",
+    "options": null,
+    "status": "approved",
+    "answer": "I default to the narrowest scope that works and only widen it when there's a real, demonstrated need: local `useState`/`useReducer` for anything only one component (and maybe its direct children via props) cares about; Context for state that's genuinely cross-cutting but changes rarely and doesn't need per-field subscriptions (theme, current user, locale); and a global store (Redux Toolkit or Zustand) once state needs to be read/written from many unrelated parts of the tree, needs to persist or be inspected/debugged as a whole, or updates frequently enough that Context's blanket re-render behavior would hurt.",
+    "explanation": "The failure mode I actively avoid is reaching for a global store by default 'just in case' — it adds indirection (you can no longer tell what a component depends on just by reading its props) and makes local reasoning harder. The signal that state should move up is usually concrete: two siblings need to share it and lifting state to their common parent got awkward, or a piece of state needs to survive a component unmounting (e.g. cart contents surviving navigation). I also separate *server state* (data fetched from an API) from this decision entirely — it belongs in a caching layer like RTK Query or TanStack Query rather than in Redux/Zustand/Context as plain state, since server data has different lifecycle needs (staleness, refetching, request de-duplication) that a generic state container doesn't solve for you.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — Choosing the State Structure",
+        "url": "https://react.dev/learn/choosing-the-state-structure"
+      },
+      {
+        "label": "React docs — Scaling Up with Reducer and Context",
+        "url": "https://react.dev/learn/scaling-up-with-reducer-and-context"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-management-05",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Mid",
+    "type": "code-challenge",
+    "question": "A component tree consumes a Context whose value updates on every scroll frame (e.g. a shared scroll position). Every consumer re-renders on each update, even ones that don't display anything related to scroll. Refactor the approach so unrelated consumers stop re-rendering.",
+    "options": null,
+    "status": "approved",
+    "answer": "Stop routing the fast-changing scroll value through React Context/state at all. If it's only used to drive visual effects (a header fading/collapsing as you scroll), move it to a Reanimated `useSharedValue` updated by a `useAnimatedScrollHandler`, which lives outside React's render tree and updates on the UI thread — no React component re-renders on scroll at all. For the subset of consumers that genuinely need scroll position in JS-rendered UI, replace the single Context with a subscription-based external store (`useSyncExternalStore`, or a small Zustand store) so each consumer supplies its own selector and only re-renders when the specific slice it reads actually changes — components that never call the hook are unaffected, unlike every consumer of a `Context.Provider` re-rendering on every value change.",
+    "explanation": "The core problem with the original design is that Context has no per-field subscription granularity: any update to the Provider's value re-renders *every* component that calls `useContext(ScrollContext)`, even ones that don't touch the scroll value in their JSX. Splitting the Context into more Contexts wouldn't fix a single frequently-changing value — the fix has to change the subscription model itself, either by moving the value off the React render path entirely (Reanimated) or by using a store with selector-based subscriptions instead of Context.",
+    "code": "// store.ts — external store with selector-based subscriptions\ntype Listener = () => void;\nlet scrollY = 0;\nconst listeners = new Set<Listener>();\n\nexport const scrollStore = {\n  setScrollY(value: number) {\n    scrollY = value;\n    listeners.forEach((l) => l());\n  },\n  subscribe(listener: Listener) {\n    listeners.add(listener);\n    return () => listeners.delete(listener);\n  },\n  getSnapshot: () => scrollY,\n};\n\n// useScrollY.ts — only re-renders components that call it\nimport { useSyncExternalStore } from 'react';\nexport function useScrollY() {\n  return useSyncExternalStore(scrollStore.subscribe, scrollStore.getSnapshot);\n}\n\n// Unrelated components never call useScrollY(), so they never re-render\n// when scrollStore.setScrollY() fires on every scroll frame.",
+    "references": [
+      {
+        "label": "React docs — useSyncExternalStore",
+        "url": "https://react.dev/reference/react/useSyncExternalStore"
+      },
+      {
+        "label": "React Native Reanimated docs — useAnimatedScrollHandler",
+        "url": "https://docs.swmansion.com/react-native-reanimated/docs/scroll/useAnimatedScrollHandler/"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-management-07",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "What is the main downside of using React Context for state that changes very frequently (e.g. many times per second)?",
+    "options": [
+      "Context values cannot hold objects, only primitives",
+      "Every component consuming that Context re-renders on every update, regardless of which part of the value it actually uses",
+      "Context requires a Redux store to function",
+      "Context updates are asynchronous and can be delayed by several seconds"
+    ],
+    "status": "approved",
+    "answer": "\"Every component consuming that Context re-renders on every update, regardless of which part of the value it actually uses\" — Context has no per-field subscription granularity, so a value updating many times per second forces every consumer to re-render that often too.",
+    "explanation": "Context can absolutely hold objects (that's the common case, not a limitation), so that option is simply false. It has no dependency on Redux whatsoever — Context is a plain React feature usable with any state approach, including no external library at all. Context updates aren't asynchronous or delayed either; they're applied synchronously within React's normal render/commit cycle, just like any other state update — the *problem* with high-frequency values is the opposite of delay: they cause re-renders too often, not too late.",
+    "code": null,
+    "references": [
+      {
+        "label": "React docs — Scaling Up with Reducer and Context",
+        "url": "https://react.dev/learn/scaling-up-with-reducer-and-context"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-management-08",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Mid",
+    "type": "multiple-choice",
+    "question": "In Redux Toolkit, what does `createAsyncThunk` primarily help you do?",
+    "options": [
+      "Automatically generate reducers for synchronous state updates",
+      "Handle async logic (like an API call) and dispatch pending/fulfilled/rejected actions automatically",
+      "Combine multiple slices into a single root reducer",
+      "Persist the Redux store to disk between app launches"
+    ],
+    "status": "approved",
+    "answer": "\"Handle async logic (like an API call) and dispatch pending/fulfilled/rejected actions automatically\" — `createAsyncThunk` wraps a promise-returning function and generates the three lifecycle action types for you, so you don't hand-write loading/success/error action creators yourself.",
+    "explanation": "It doesn't generate synchronous reducers (that's `createSlice`'s `reducers` field), doesn't combine slices (that's `combineReducers`/`configureStore`'s job), and has nothing to do with persisting the store to disk (that's a separate concern, typically handled by `redux-persist`). Concretely, `createAsyncThunk('users/fetchById', payloadCreator)` dispatches `users/fetchById/pending` immediately, then either `users/fetchById/fulfilled` (with the resolved value as `action.payload`) or `users/fetchById/rejected` (with the error) once the promise settles — you handle those three in a slice's `extraReducers` builder (`builder.addCase(fetchById.pending, ...)` etc.) to drive loading/error/data state without writing that plumbing by hand.",
+    "code": null,
+    "references": [
+      {
+        "label": "Redux Toolkit docs — createAsyncThunk",
+        "url": "https://redux-toolkit.js.org/api/createAsyncThunk"
+      }
+    ],
+    "reviewer_notes": []
+  },
+  {
+    "id": "state-management-09",
+    "track": "react-native",
+    "area": "State Management",
+    "level": "Senior",
+    "type": "open-question",
+    "question": "Design the state management architecture for a mid-size e-commerce React Native app with cart, auth, and product catalog state — specifically, how would you separate server state (from an API) from client-only UI state?",
+    "options": null,
+    "status": "approved",
+    "answer": "I'd split state into two categories with different tools: server-derived state (product catalog, order history, anything that originates from an API) goes through a caching layer purpose-built for it — RTK Query if the app is already on Redux Toolkit, since it gives automatic caching, request de-duplication, and refetch-on-focus/reconnect without hand-written thunks — while genuinely client-only UI state (cart contents before checkout, which tab is active, form drafts, auth token/session) lives in regular Redux slices (or Zustand stores) that I write by hand. Cart specifically I'd treat as client state even though it references product ids, since it's locally owned until checkout; auth state is also client state (a token plus derived `isAuthenticated`), even though it originates from a login API call, because after that call it behaves like ordinary session state, not a re-fetchable cache entry.",
+    "explanation": "The mistake this avoids is treating server data as if it were just more Redux state to `dispatch` updates into by hand — that reinvents loading/error/staleness tracking, cache invalidation, and re-fetch-on-focus logic that a dedicated data-fetching library already solves well, and it tends to produce Redux slices full of `isLoading`/`error` booleans duplicated per resource. The dividing question I use for any given piece of state is 'does this exist because the server told us, and can it become stale?' — if yes, it's server-cache state and belongs in RTK Query/TanStack Query; if it's something the user is actively editing or a purely local UI concern, it's client state and belongs in a slice/store. Product catalog and order history clearly fall in the first bucket; cart-before-checkout and auth session fall in the second, even though both eventually talk to a server.",
+    "code": null,
+    "references": [
+      {
+        "label": "Redux Toolkit docs — RTK Query overview",
+        "url": "https://redux-toolkit.js.org/rtk-query/overview"
+      },
+      {
+        "label": "Redux Toolkit docs — createAsyncThunk",
+        "url": "https://redux-toolkit.js.org/api/createAsyncThunk"
+      }
+    ],
+    "reviewer_notes": []
+  }
+]

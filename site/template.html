@@ -305,11 +305,66 @@
     color: var(--text);
     cursor: pointer;
   }
+  .action-btn:hover { border-color: var(--accent); }
   .known-btn:hover { border-color: var(--known); color: var(--known); }
   .review-btn:hover { border-color: var(--review); color: var(--review); }
   .clear-btn:hover { border-color: var(--text-dim); }
   .share-btn { margin-left: auto; }
   .share-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .landing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 4px;
+  }
+
+  .landing-notice {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    font-size: 0.85rem;
+    z-index: 1000;
+    max-width: min(90vw, 440px);
+    text-align: center;
+  }
+  .landing-notice-error { border-color: var(--review); color: var(--review); }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 12, 16, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+    padding: 16px;
+  }
+
+  .modal-box {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 440px;
+    width: 100%;
+    box-shadow: var(--shadow);
+  }
+  .modal-box h2 { margin-top: 0; }
+  .modal-box p { color: var(--text-dim); font-size: 0.9rem; }
+  .modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
 
   @keyframes highlight-pulse {
     0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
@@ -414,6 +469,219 @@
       } catch (e) {
         memoryFallback[key] = progress;
       }
+    }
+
+    // --- Progress export / import ----------------------------------------
+    // No backend in this project — "backup" just means the user downloads a
+    // JSON file and can re-import it (same browser later, or a different
+    // one entirely). Everything below is plain client-side file I/O.
+
+    var PROGRESS_KEY_PREFIX = "interview-prep:progress:";
+    var VALID_PROGRESS_STATUSES = { known: true, review: true };
+
+    // Every trackId with at least one saved entry, wherever it might live
+    // (real localStorage keys, or the in-memory fallback used when
+    // localStorage is unavailable) — not just tracks in the current
+    // manifest, so progress for a since-removed/renamed track is still
+    // included rather than silently dropped.
+    function allProgressTrackIds() {
+      var ids = {};
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var key = localStorage.key(i);
+          if (key && key.indexOf(PROGRESS_KEY_PREFIX) === 0) {
+            ids[key.slice(PROGRESS_KEY_PREFIX.length)] = true;
+          }
+        }
+      } catch (e) {
+        // localStorage unavailable — memoryFallback below is the only source.
+      }
+      Object.keys(memoryFallback).forEach(function (key) {
+        if (key.indexOf(PROGRESS_KEY_PREFIX) === 0) {
+          ids[key.slice(PROGRESS_KEY_PREFIX.length)] = true;
+        }
+      });
+      return Object.keys(ids);
+    }
+
+    function buildExportPayload() {
+      var tracks = {};
+      allProgressTrackIds().forEach(function (trackId) {
+        var progress = loadProgress(trackId);
+        if (Object.keys(progress).length) tracks[trackId] = progress;
+      });
+      return {
+        schema: "interview-prep-progress",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        tracks: tracks
+      };
+    }
+
+    function showLandingNotice(message, isError) {
+      var existing = document.getElementById("landing-notice");
+      if (existing) existing.parentNode.removeChild(existing);
+      var el = document.createElement("div");
+      el.id = "landing-notice";
+      el.className = "landing-notice" + (isError ? " landing-notice-error" : "");
+      el.textContent = message;
+      document.body.appendChild(el);
+      setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 4000);
+    }
+
+    function exportProgress() {
+      var payload = buildExportPayload();
+      var trackIds = Object.keys(payload.tracks);
+      if (!trackIds.length) {
+        showLandingNotice("No progress saved yet — nothing to export.");
+        return;
+      }
+      var itemCount = trackIds.reduce(function (sum, id) {
+        return sum + Object.keys(payload.tracks[id]).length;
+      }, 0);
+
+      var json = JSON.stringify(payload, null, 2);
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var dateStr = new Date().toISOString().slice(0, 10);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "interview-prep-progress-" + dateStr + ".json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showLandingNotice(
+        "Exported progress: " + trackIds.length + " track" + (trackIds.length === 1 ? "" : "s") +
+        ", " + itemCount + " item" + (itemCount === 1 ? "" : "s") + "."
+      );
+    }
+
+    // Parses + sanitizes an imported file's contents. Never trusts the file:
+    // invalid entries are dropped rather than applied or thrown.
+    function parseImportedPayload(rawText) {
+      var parsed;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch (e) {
+        return { error: "That file isn't valid JSON." };
+      }
+      if (!parsed || typeof parsed !== "object" || !parsed.tracks || typeof parsed.tracks !== "object") {
+        return { error: "That file doesn't look like an exported progress file (missing \"tracks\")." };
+      }
+
+      var tracks = {};
+      Object.keys(parsed.tracks).forEach(function (trackId) {
+        var rawProgress = parsed.tracks[trackId];
+        if (!rawProgress || typeof rawProgress !== "object") return;
+        var clean = {};
+        Object.keys(rawProgress).forEach(function (itemId) {
+          var status = rawProgress[itemId];
+          if (VALID_PROGRESS_STATUSES[status]) clean[itemId] = status;
+        });
+        if (Object.keys(clean).length) tracks[trackId] = clean;
+      });
+
+      if (!Object.keys(tracks).length) {
+        return { error: "That file has no valid progress entries to import." };
+      }
+      return { tracks: tracks };
+    }
+
+    function applyImportedProgress(importedTracks, mode) {
+      var trackCount = 0;
+      var itemCount = 0;
+      Object.keys(importedTracks).forEach(function (trackId) {
+        var imported = importedTracks[trackId];
+        var next = mode === "replace" ? imported : Object.assign({}, loadProgress(trackId), imported);
+        saveProgress(trackId, next);
+        trackCount++;
+        itemCount += Object.keys(imported).length;
+      });
+      return { trackCount: trackCount, itemCount: itemCount };
+    }
+
+    // Only shown when the import would actually overwrite something —
+    // tracks with no existing local progress are applied directly, no
+    // need to interrupt the user with a choice that has only one outcome.
+    function showImportConflictModal(conflictTrackIds, onChoice) {
+      var overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.innerHTML =
+        '<div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">' +
+          '<h2 id="import-modal-title">Import progress</h2>' +
+          "<p>You already have saved progress for: <strong>" + escapeHtml(conflictTrackIds.join(", ")) + "</strong>. " +
+          "How should the imported file be applied?</p>" +
+          '<div class="modal-actions">' +
+            '<button class="action-btn" data-choice="merge">Merge (nothing local is lost)</button>' +
+            '<button class="action-btn" data-choice="replace">Replace those tracks</button>' +
+            '<button class="action-btn" data-choice="cancel">Cancel</button>' +
+          "</div>" +
+        "</div>";
+
+      function close(choice) {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        document.removeEventListener("keydown", onKeydown);
+        onChoice(choice);
+      }
+
+      function onKeydown(e) {
+        if (e.key === "Escape") close("cancel");
+      }
+
+      overlay.addEventListener("click", function (e) {
+        if (e.target === overlay) close("cancel");
+      });
+
+      var choiceButtons = overlay.querySelectorAll("[data-choice]");
+      for (var i = 0; i < choiceButtons.length; i++) {
+        (function (btn) {
+          btn.addEventListener("click", function () { close(btn.getAttribute("data-choice")); });
+        })(choiceButtons[i]);
+      }
+
+      document.addEventListener("keydown", onKeydown);
+      document.body.appendChild(overlay);
+    }
+
+    function importProgressFromFile(file) {
+      var reader = new FileReader();
+      reader.onerror = function () {
+        showLandingNotice("Couldn't read that file.", true);
+      };
+      reader.onload = function () {
+        var result = parseImportedPayload(String(reader.result));
+        if (result.error) {
+          showLandingNotice(result.error, true);
+          return;
+        }
+        var importedTracks = result.tracks;
+        var conflictIds = Object.keys(importedTracks).filter(function (trackId) {
+          return Object.keys(loadProgress(trackId)).length > 0;
+        });
+
+        function finish(mode) {
+          var summary = applyImportedProgress(importedTracks, mode);
+          showLandingNotice(
+            "Imported progress: " + summary.trackCount + " track" + (summary.trackCount === 1 ? "" : "s") +
+            ", " + summary.itemCount + " item" + (summary.itemCount === 1 ? "" : "s") + "."
+          );
+          if (state.view === "track" && importedTracks[state.trackId]) renderTrackView();
+        }
+
+        if (conflictIds.length) {
+          showImportConflictModal(conflictIds, function (choice) {
+            if (choice === "cancel") return;
+            finish(choice);
+          });
+        } else {
+          finish("merge"); // no conflict — merge and replace are equivalent here
+        }
+      };
+      reader.readAsText(file);
     }
 
     function getTrackMeta(trackId) {
@@ -609,6 +877,11 @@
         '<section class="landing">' +
           "<h1>Interview Prep Study Hub</h1>" +
           '<p class="subtitle">Pick a track to start studying.</p>' +
+          '<div class="landing-actions">' +
+            '<button class="action-btn" id="export-progress-btn">Export progress</button>' +
+            '<button class="action-btn" id="import-progress-btn">Import progress</button>' +
+            '<input type="file" id="import-progress-input" accept="application/json,.json" hidden />' +
+          "</div>" +
           '<div class="track-grid">' + cardsHtml + "</div>" +
         "</section>";
 
@@ -617,6 +890,20 @@
         buttons[i].addEventListener("click", (function (btn) {
           return function () { showTrack(btn.getAttribute("data-track-id")); };
         })(buttons[i]));
+      }
+
+      var exportBtn = document.getElementById("export-progress-btn");
+      if (exportBtn) exportBtn.addEventListener("click", exportProgress);
+
+      var importBtn = document.getElementById("import-progress-btn");
+      var importInput = document.getElementById("import-progress-input");
+      if (importBtn && importInput) {
+        importBtn.addEventListener("click", function () { importInput.click(); });
+        importInput.addEventListener("change", function () {
+          var file = importInput.files && importInput.files[0];
+          if (file) importProgressFromFile(file);
+          importInput.value = ""; // allow re-selecting the same file next time
+        });
       }
     }
 

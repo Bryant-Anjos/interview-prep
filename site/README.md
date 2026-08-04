@@ -4,6 +4,15 @@ A self-contained, single-file study tool for browsing and reviewing the
 question bank produced by the hub's content pipeline. No frameworks, no
 build tools, no external requests — just HTML/CSS/JS.
 
+Per-item "known"/"needs review" progress lives in `localStorage`, keyed
+per track — there's no backend, so it never leaves the browser on its own.
+The landing screen's **Export progress** / **Import progress** buttons are
+the way to move it: export downloads a JSON file with every track's
+progress; import reads one back in, merging with (or replacing) whatever's
+already saved locally — it only asks which when a track in the file would
+actually overwrite existing local data. This is plain client-side file I/O
+(`Blob` + `FileReader`), entirely inside `template.html` — no new files.
+
 ## Files
 
 - `template.html` — the actual site (markup, CSS, JS). Contains a

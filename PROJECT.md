@@ -20,7 +20,7 @@ with the same internal shape:
 tracks/<track-id>/
 ├── track.md              # scope: areas, levels, item types, volume target — the track's own PROJECT.md
 ├── data/
-│   ├── questions-queue.json   # working queue (all statuses)
+│   ├── questions-queue.json   # in-flight work only (pending-*/needs-revision); approved items are removed once promoted
 │   └── questions.json         # final approved bank (source of truth for the site)
 └── study-guide.md             # Markdown export, generated once the bank is complete
 ```
@@ -65,7 +65,8 @@ exact same setup" — new track folder, same agents, same site.
 
 ## Definition of Done — per track
 
-- [ ] Every item in that track's queue has reached status `approved`
+- [ ] That track's queue is empty — every item has been researched,
+      answered, reviewed, and promoted into `questions.json`
 - [ ] `study-guide.md` generated from the track's final bank
 - [ ] Track registered in `tracks/tracks-manifest.json`
 - [ ] Site rebuilt to include the track and it's selectable/studyable end to end

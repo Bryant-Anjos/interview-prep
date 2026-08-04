@@ -17,10 +17,16 @@ Be the correctness gate. For every item in
 `tracks/<track-id>/data/questions-queue.json` with `status: "pending-review"`,
 independently verify it's actually right, then either:
 
-- **Approve it**: copy the full item into
-  `tracks/<track-id>/data/questions.json`, and set its `status` to
-  `"approved"` in the queue file too (keep both files consistent — the queue
-  is the full history, `questions.json` is the approved-only view the site reads).
+- **Approve it**: copy the full item (all fields, unchanged, `status` set to
+  `"approved"`) into `tracks/<track-id>/data/questions.json`, **then remove
+  it entirely from `questions-queue.json`**. Don't leave an
+  `approved`-status copy behind in the queue — `questions.json` is now its
+  only home. The queue is meant to hold in-flight work only
+  (`pending-answer` / `pending-review` / `needs-revision`); leaving approved
+  items in it forces every future reviewer run to read through the track's
+  entire history just to find the handful of items actually needing
+  attention. Nothing is lost by removing it — the copy in `questions.json`
+  is the complete, permanent record, `reviewer_notes` included.
 - **Reject it**: set `status: "needs-revision"` and append a specific,
   actionable note to `reviewer_notes` explaining exactly what's wrong.
 
@@ -65,7 +71,9 @@ with clear instructions. The one exception is trivial, unambiguous fixes
 
 - Edit `tracks/<track-id>/data/questions-queue.json` and
   `tracks/<track-id>/data/questions.json` directly. Keep both valid JSON on
-  every save.
+  every save. On approval this means: item appended to `questions.json`
+  **and** removed from the queue array — not left behind with
+  `status: "approved"`.
 - Every rejection note should be specific enough that the answerer doesn't
   have to re-research from scratch: name the wrong fact, the broken
   reference, or the exact code issue.

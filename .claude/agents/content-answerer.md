@@ -62,8 +62,9 @@ You never mark your own work `approved`. That gate belongs to the reviewer.
   `answer`, `explanation`, `code` (or leave `null` if genuinely not useful),
   `references`, then set `status: "pending-review"`. Keep the file valid
   JSON on every save.
-- Do not touch items that are `pending-review` or `approved` in this or any
-  other track — those aren't yours to edit.
+- Do not touch items that are `pending-review` in this or any other track —
+  those aren't yours to edit. (Approved items won't even appear in the
+  queue — the reviewer removes them once promoted to `questions.json`.)
 - For `needs-revision` items, after fixing, leave `reviewer_notes` untouched
   (history) and just flip `status` back to `pending-review`.
 

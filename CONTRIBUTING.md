@@ -19,8 +19,9 @@ Skip to the section that matches what you want to do:
 ## A. Add or fix questions in an existing track
 
 Where things live: `tracks/<track-id>/data/questions-queue.json` (working
-file, any status) and `tracks/<track-id>/data/questions.json` (final,
-`approved`-only bank the site reads). Full field-by-field contract:
+file — in-flight items only; approved items are removed from it and live
+solely in `questions.json` from then on) and `tracks/<track-id>/data/questions.json`
+(final, `approved`-only bank the site reads). Full field-by-field contract:
 [`data/schema.md`](data/schema.md).
 
 **Two ways to do this:**
@@ -35,8 +36,9 @@ file, any status) and `tracks/<track-id>/data/questions.json` (final,
      fills in `answer` / `explanation` / `code` / `references`, sets
      `status: "pending-review"`.
    - Correctness gate → the **content-reviewer** agent verifies each item
-     and either promotes it into `questions.json` (`status: "approved"`) or
-     bounces it back with a note (`status: "needs-revision"`).
+     and either promotes it into `questions.json` (`status: "approved"`,
+     and removed from the queue — it doesn't stay there) or bounces it back
+     with a note (`status: "needs-revision"`).
    - Each agent's full instructions live in `.claude/agents/*.md` — they're
      written to be read and followed literally by an AI coding assistant,
      but a human can follow the same steps by hand too.

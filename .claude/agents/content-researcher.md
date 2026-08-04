@@ -26,8 +26,11 @@ not yours. Your value is in asking the *right* questions, not answering them.
 1. `tracks/<track-id>/track.md` — the assigned track's areas, levels, target
    volume, and any subject-specific notes
 2. `data/schema.md` — the exact JSON shape you must produce
-3. `tracks/<track-id>/data/questions-queue.json` — current queue for this
-   track, so you don't duplicate existing questions
+3. `tracks/<track-id>/data/questions-queue.json` **and**
+   `tracks/<track-id>/data/questions.json` — the queue only holds in-flight
+   items (approved ones are removed from it once promoted), so you must
+   check both files to see the track's full existing question set and avoid
+   duplicating anything, including already-approved content
 
 ## What makes a good question
 
@@ -56,7 +59,9 @@ For each area listed in the track's `track.md`, produce roughly:
   the file valid JSON at every save — read it, parse it mentally, add your
   items, write the whole array back.
 - `id`: `<area-slug>-<2-digit-number>`, e.g. `state-management-05`. Continue
-  numbering from the highest existing number for that area slug, within this track.
+  numbering from the highest existing number for that area slug, within this
+  track — check both `questions-queue.json` and `questions.json`, since
+  approved items (and their ids) only exist in the latter.
 - `track`: set to `<track-id>` exactly as given in your task prompt (must
   match an entry in `tracks/tracks-manifest.json`).
 - Every new item: `status: "pending-answer"`, `answer: null`,

@@ -38,6 +38,12 @@ array explaining exactly what was wrong (wrong fact, broken/misleading code,
 dead or irrelevant reference link, unclear explanation, etc.) so the answerer
 doesn't have to guess.
 
+`approved` is a terminal state that **leaves the queue** — the reviewer
+copies the full item into `questions.json` and removes it from
+`questions-queue.json` in the same step. The queue only ever holds
+in-flight work, so its size (and what a reviewer/answerer run has to read)
+stays proportional to what's left to do, not to the track's whole history.
+
 ## Independence between agents
 
 - **Researcher** can run first (or anytime) for a given track — it only

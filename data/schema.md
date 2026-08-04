@@ -121,12 +121,22 @@ requirement to translate every item before the language "counts."
 
 ## Files (per track)
 
-- `tracks/<track-id>/data/questions-queue.json` — working file. Contains
-  items in **any** status, for that track only. This is where the
-  researcher, answerer and reviewer all read/write while working that track.
-- `tracks/<track-id>/data/questions.json` — final output for that track.
-  Only `approved` items, written here by the reviewer at the moment of
-  approval. This is the file the site build step reads for that track.
+- `tracks/<track-id>/data/questions-queue.json` — **in-flight work only**:
+  items with status `pending-answer`, `pending-review`, or `needs-revision`,
+  for that track only. This is where the researcher, answerer and reviewer
+  all read/write while working that track. An item is **removed from this
+  file** the moment it's approved — it never sits here with
+  `status: "approved"`. Keeping the queue limited to unfinished work keeps
+  it from growing forever and keeps the reviewer's read cost proportional
+  to remaining work, not to the track's entire history.
+- `tracks/<track-id>/data/questions.json` — final output for that track,
+  and the **sole, permanent home** of every approved item once it's
+  promoted (full item, all fields, including `reviewer_notes` — nothing is
+  lost by removing it from the queue). This is the file the site build step
+  reads for that track. Agents checking for existing questions (to avoid
+  duplicates) or the next free `id` number must check **both** files —
+  `questions.json` for everything already approved, the queue for
+  everything still in flight.
 
 ## Validation checklist (any agent touching a track's file should self-check)
 

@@ -5,13 +5,32 @@ question bank produced by the hub's content pipeline. No frameworks, no
 build tools, no external requests — just HTML/CSS/JS.
 
 Per-item "known"/"needs review" progress lives in `localStorage`, keyed
-per track — there's no backend, so it never leaves the browser on its own.
+per track. The optional **Spaced repetition** mode has an independent card
+schedule in `IndexedDB`: it records each answer's confidence (0–3), next due
+date, interval, ease and lapses. Neither mode changes the other, and there is
+no backend, so data never leaves the browser on its own.
+
 The landing screen's **Export progress** / **Import progress** buttons are
-the way to move it: export downloads a JSON file with every track's
-progress; import reads one back in, merging with (or replacing) whatever's
-already saved locally — it only asks which when a track in the file would
-actually overwrite existing local data. This is plain client-side file I/O
-(`Blob` + `FileReader`), entirely inside `template.html` — no new files.
+the way to move both kinds of progress: export downloads a versioned JSON
+backup with legacy progress and all SRS schedules; import accepts the older
+v1 backups as well as the current format. On merge, the most recently
+reviewed SRS card wins when the same card appears in both places; replace
+only affects the data domains present in the imported file. This is plain
+client-side file I/O (`Blob` + `FileReader`), entirely inside
+`template.html` — no new files.
+
+In spaced repetition, reveal the answer and rate it: **0 — Don't know**,
+**1 — Partial answer**, **2 — Good answer**, or **3 — Interview-ready**.
+Low confidence returns soon (0 returns in 10 minutes); high confidence grows
+the interval. Due and weak cards are selected before new cards, while strong
+cards are deliberately scheduled farther away. New cards are shuffled and
+limited per local calendar day: Easy (5), Recommended (20), Hard (40), or a
+custom number. The SRS level selector scopes cards to Junior only,
+Junior + Mid, or all three levels.
+
+The SRS view is linkable like the normal track view: its URL is
+`#/track/<track-id>/srs`. Opening that link restores the selected track and
+loads its locally saved review queue.
 
 ## Multi-language support
 

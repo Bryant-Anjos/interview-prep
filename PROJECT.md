@@ -51,8 +51,9 @@ exact same setup" — new track folder, same agents, same site.
 1. `tracks/<track-id>/data/questions.json` — final approved question bank for that track
 2. `tracks/<track-id>/study-guide.md` — readable Markdown export
 3. `site/` — one self-contained HTML study site covering every track in the
-   manifest (track picker + filter + search + flashcard mode + localStorage
-   progress), published as a Claude Artifact
+   manifest (track picker + filter + search + flashcard mode + local browser
+   progress, including optional spaced repetition), published as a Claude
+   Artifact
 
 ## Definition of Done — per item
 

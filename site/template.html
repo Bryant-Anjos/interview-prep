@@ -383,6 +383,30 @@
     margin-top: 16px;
   }
 
+  /* Spaced repetition */
+  .srs-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .srs-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+  }
+  .srs-question { font-size: 1.15rem; font-weight: 600; margin: 8px 0 16px; }
+  .srs-answer { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
+  .srs-grades { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; margin-top: 18px; }
+  .srs-grade { min-height: 62px; text-align: left; }
+  .srs-grade small { display: block; color: var(--text-dim); }
+  .srs-grade-0:hover { border-color: var(--review); color: var(--review); }
+  .srs-grade-2:hover, .srs-grade-3:hover { border-color: var(--known); color: var(--known); }
+  .srs-settings { margin: 12px 0 0; font-size: 0.85rem; color: var(--text-dim); }
+  @media (max-width: 560px) { .srs-grades { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }
+
   @keyframes highlight-pulse {
     0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
     100% { box-shadow: var(--shadow); }
@@ -431,7 +455,8 @@
       trackId: null,
       filters: { area: "all", level: "all", type: "all", status: "all", search: "" },
       lang: null,
-      itemLangOverride: {}
+      itemLangOverride: {},
+      srs: { queue: [], index: 0, answerShown: false, summary: null }
     };
 
     function escapeHtml(value) {
@@ -446,11 +471,15 @@
 
     // URL hash routing — makes tracks and individual questions linkable/shareable:
     //   #/track/<trackId>            -> a track, default filters
+    //   #/track/<trackId>/srs        -> its spaced-repetition session
     //   #/track/<trackId>/<itemId>   -> that track, with one question expanded + scrolled into view
     function parseHash() {
       var raw = window.location.hash.replace(/^#\/?/, "");
       var parts = raw.split("/").filter(Boolean);
       if (parts[0] === "track" && parts[1]) {
+        if (parts[2] === "srs") {
+          return { view: "srs", trackId: decodeURIComponent(parts[1]), itemId: null };
+        }
         return {
           view: "track",
           trackId: decodeURIComponent(parts[1]),
@@ -466,6 +495,10 @@
       return hash;
     }
 
+    function buildSrsHash(trackId) {
+      return "#/track/" + encodeURIComponent(trackId) + "/srs";
+    }
+
     function updateHash(trackId, itemId, replace) {
       var method = replace ? "replaceState" : "pushState";
       if (!trackId) {
@@ -478,6 +511,12 @@
       var newHash = buildHash(trackId, itemId);
       if (window.location.hash === newHash) return;
       history[method](null, "", newHash);
+    }
+
+    function updateSrsHash(trackId, replace) {
+      var method = replace ? "replaceState" : "pushState";
+      var newHash = buildSrsHash(trackId);
+      if (window.location.hash !== newHash) history[method](null, "", newHash);
     }
 
     function progressKey(trackId) {
@@ -591,6 +630,184 @@
       return { item: mergeTranslatedItem(item, entry), lang: lang, isFallback: false, hasTranslation: true };
     }
 
+    // --- Spaced repetition (IndexedDB, separate from binary progress) ----
+
+    var SRS_DB_NAME = "interview-prep-srs";
+    var SRS_DB_VERSION = 1;
+    var srsDbPromise = null;
+
+    function openSrsDb() {
+      if (!window.indexedDB) return Promise.reject(new Error("IndexedDB is unavailable."));
+      if (srsDbPromise) return srsDbPromise;
+      srsDbPromise = new Promise(function (resolve, reject) {
+        var request = indexedDB.open(SRS_DB_NAME, SRS_DB_VERSION);
+        request.onupgradeneeded = function () {
+          var db = request.result;
+          if (!db.objectStoreNames.contains("cards")) {
+            var cards = db.createObjectStore("cards", { keyPath: ["trackId", "itemId"] });
+            cards.createIndex("by-track", "trackId", { unique: false });
+          }
+          if (!db.objectStoreNames.contains("settings")) {
+            db.createObjectStore("settings", { keyPath: "trackId" });
+          }
+        };
+        request.onsuccess = function () { resolve(request.result); };
+        request.onerror = function () { reject(request.error || new Error("Couldn't open spaced repetition storage.")); };
+      });
+      return srsDbPromise;
+    }
+
+    function srsTransaction(storeName, mode, action) {
+      return openSrsDb().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction(storeName, mode);
+          var store = tx.objectStore(storeName);
+          var result;
+          try { result = action(store); } catch (e) { reject(e); return; }
+          tx.oncomplete = function () { resolve(result); };
+          tx.onerror = function () { reject(tx.error || new Error("Couldn't save spaced repetition data.")); };
+          tx.onabort = function () { reject(tx.error || new Error("Spaced repetition storage was aborted.")); };
+        });
+      });
+    }
+
+    function requestValue(request) {
+      return new Promise(function (resolve, reject) {
+        request.onsuccess = function () { resolve(request.result); };
+        request.onerror = function () { reject(request.error || new Error("Storage read failed.")); };
+      });
+    }
+
+    function getSrsCards(trackId) {
+      return openSrsDb().then(function (db) {
+        var tx = db.transaction("cards", "readonly");
+        return requestValue(tx.objectStore("cards").index("by-track").getAll(trackId));
+      });
+    }
+
+    function getAllSrsData() {
+      return openSrsDb().then(function (db) {
+        var tx = db.transaction(["cards", "settings"], "readonly");
+        return Promise.all([
+          requestValue(tx.objectStore("cards").getAll()),
+          requestValue(tx.objectStore("settings").getAll())
+        ]);
+      }).then(function (result) {
+        var tracks = {};
+        result[1].forEach(function (setting) {
+          tracks[setting.trackId] = { settings: {
+            newCardsPerDay: setting.newCardsPerDay || 20,
+            newCardsPreset: setting.newCardsPreset || "recommended",
+            newCardsDate: setting.newCardsDate || "",
+            newCardsShown: setting.newCardsShown || 0,
+            maxLevel: setting.maxLevel || "Senior"
+          }, cards: {} };
+        });
+        result[0].forEach(function (card) {
+          if (!tracks[card.trackId]) tracks[card.trackId] = { settings: defaultSrsSettings(card.trackId), cards: {} };
+          var copy = Object.assign({}, card);
+          delete copy.trackId;
+          delete copy.itemId;
+          tracks[card.trackId].cards[card.itemId] = copy;
+        });
+        return tracks;
+      });
+    }
+
+    function defaultSrsSettings(trackId) {
+      return { trackId: trackId, newCardsPerDay: 20, newCardsPreset: "recommended", newCardsDate: "", newCardsShown: 0, maxLevel: "Senior" };
+    }
+
+    function localDayKey(date) {
+      var d = date || new Date();
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+
+    function normalizeSrsSettings(settings) {
+      var next = Object.assign(defaultSrsSettings(settings.trackId), settings);
+      next.newCardsPerDay = Math.min(100, Math.max(1, Math.floor(Number(next.newCardsPerDay) || 20)));
+      if (["easy", "recommended", "hard", "custom"].indexOf(next.newCardsPreset) === -1) {
+        next.newCardsPreset = next.newCardsPerDay === 5 ? "easy" : next.newCardsPerDay === 40 ? "hard" : next.newCardsPerDay === 20 ? "recommended" : "custom";
+      }
+      next.maxLevel = LEVELS.indexOf(next.maxLevel) === -1 ? "Senior" : next.maxLevel;
+      if (next.newCardsDate !== localDayKey()) {
+        next.newCardsDate = localDayKey();
+        next.newCardsShown = 0;
+      }
+      next.newCardsShown = Math.max(0, Math.floor(Number(next.newCardsShown) || 0));
+      return next;
+    }
+
+    function saveSrsSettings(settings) {
+      return srsTransaction("settings", "readwrite", function (store) { store.put(settings); });
+    }
+
+    function itemMatchesSrsLevel(item, maxLevel) {
+      return LEVELS.indexOf(item.level) <= LEVELS.indexOf(maxLevel);
+    }
+
+    function intervalForConfidence(card, confidence) {
+      var previous = card && Number(card.intervalDays) || 0;
+      var ease = card && Number(card.ease) || 2.3;
+      if (confidence === 0) return { minutes: 10, intervalDays: 0, ease: Math.max(1.3, ease - 0.2) };
+      if (confidence === 1) return { intervalDays: previous ? Math.max(1, Math.round(previous * 1.2)) : 1, ease: Math.max(1.3, ease - 0.15) };
+      if (confidence === 2) return { intervalDays: previous ? Math.max(2, Math.round(previous * ease)) : 3, ease: Math.min(3, ease + 0.03) };
+      return { intervalDays: previous ? Math.max(4, Math.round(previous * (ease + 0.7))) : 7, ease: Math.min(3, ease + 0.12) };
+    }
+
+    function nextSrsCard(card, confidence, now) {
+      var schedule = intervalForConfidence(card, confidence);
+      var dueAt = new Date(now.getTime());
+      if (schedule.minutes) dueAt.setMinutes(dueAt.getMinutes() + schedule.minutes);
+      else dueAt.setDate(dueAt.getDate() + schedule.intervalDays);
+      return {
+        trackId: card.trackId,
+        itemId: card.itemId,
+        dueAt: dueAt.toISOString(),
+        lastReviewedAt: now.toISOString(),
+        lastConfidence: confidence,
+        intervalDays: schedule.intervalDays,
+        ease: schedule.ease,
+        reviews: (Number(card.reviews) || 0) + 1,
+        lapses: (Number(card.lapses) || 0) + (confidence === 0 ? 1 : 0)
+      };
+    }
+
+    function saveSrsCard(card) {
+      return srsTransaction("cards", "readwrite", function (store) { store.put(card); });
+    }
+
+    function srsSummary(items, cards) {
+      var now = Date.now();
+      var byId = {};
+      cards.forEach(function (card) { byId[card.itemId] = card; });
+      var due = cards.filter(function (card) { return Date.parse(card.dueAt) <= now; }).length;
+      return { due: due, newCards: items.filter(function (item) { return !byId[item.id]; }).length, cardsById: byId };
+    }
+
+    function selectSrsQueue(items, cards, limit) {
+      var now = Date.now();
+      var known = {};
+      cards.forEach(function (card) { known[card.itemId] = card; });
+      var due = cards.filter(function (card) { return known[card.itemId] && Date.parse(card.dueAt) <= now; });
+      due.sort(function (a, b) {
+        var overdueA = now - Date.parse(a.dueAt), overdueB = now - Date.parse(b.dueAt);
+        if (overdueA !== overdueB) return overdueB - overdueA;
+        if ((a.lastConfidence || 0) !== (b.lastConfidence || 0)) return (a.lastConfidence || 0) - (b.lastConfidence || 0);
+        return (b.lapses || 0) - (a.lapses || 0);
+      });
+      var newItems = items.filter(function (item) { return !known[item.id]; });
+      // Fisher-Yates avoids always studying the first items from questions.json.
+      for (var i = newItems.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = newItems[i]; newItems[i] = newItems[j]; newItems[j] = temp;
+      }
+      newItems = newItems.slice(0, limit).map(function (item) {
+        return { trackId: item.track, itemId: item.id, isNew: true };
+      });
+      return due.concat(newItems);
+    }
+
     // --- Progress export / import ----------------------------------------
     // No backend in this project — "backup" just means the user downloads a
     // JSON file and can re-import it (same browser later, or a different
@@ -630,12 +847,15 @@
         var progress = loadProgress(trackId);
         if (Object.keys(progress).length) tracks[trackId] = progress;
       });
-      return {
-        schema: "interview-prep-progress",
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        tracks: tracks
-      };
+      return getAllSrsData().catch(function () { return {}; }).then(function (srsTracks) {
+        return {
+          schema: "interview-prep-progress",
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          tracks: tracks,
+          srs: { version: 1, tracks: srsTracks }
+        };
+      });
     }
 
     function showLandingNotice(message, isError) {
@@ -652,32 +872,21 @@
     }
 
     function exportProgress() {
-      var payload = buildExportPayload();
-      var trackIds = Object.keys(payload.tracks);
-      if (!trackIds.length) {
-        showLandingNotice("No progress saved yet — nothing to export.");
-        return;
-      }
-      var itemCount = trackIds.reduce(function (sum, id) {
-        return sum + Object.keys(payload.tracks[id]).length;
-      }, 0);
-
-      var json = JSON.stringify(payload, null, 2);
-      var blob = new Blob([json], { type: "application/json" });
-      var url = URL.createObjectURL(blob);
-      var dateStr = new Date().toISOString().slice(0, 10);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = "interview-prep-progress-" + dateStr + ".json";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      showLandingNotice(
-        "Exported progress: " + trackIds.length + " track" + (trackIds.length === 1 ? "" : "s") +
-        ", " + itemCount + " item" + (itemCount === 1 ? "" : "s") + "."
-      );
+      buildExportPayload().then(function (payload) {
+        var progressCount = Object.keys(payload.tracks).reduce(function (sum, id) { return sum + Object.keys(payload.tracks[id]).length; }, 0);
+        var srsCount = Object.keys(payload.srs.tracks).reduce(function (sum, id) { return sum + Object.keys(payload.srs.tracks[id].cards).length; }, 0);
+        if (!progressCount && !srsCount) {
+          showLandingNotice("No progress saved yet — nothing to export.");
+          return;
+        }
+        var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "interview-prep-progress-" + new Date().toISOString().slice(0, 10) + ".json";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+        showLandingNotice("Exported " + progressCount + " progress item" + (progressCount === 1 ? "" : "s") + " and " + srsCount + " spaced-repetition card" + (srsCount === 1 ? "" : "s") + ".");
+      }).catch(function () { showLandingNotice("Couldn't export spaced repetition data.", true); });
     }
 
     // Parses + sanitizes an imported file's contents. Never trusts the file:
@@ -705,10 +914,36 @@
         if (Object.keys(clean).length) tracks[trackId] = clean;
       });
 
-      if (!Object.keys(tracks).length) {
-        return { error: "That file has no valid progress entries to import." };
+      var srsTracks = {};
+      if (parsed.srs && parsed.srs.tracks && typeof parsed.srs.tracks === "object") {
+        Object.keys(parsed.srs.tracks).forEach(function (trackId) {
+          var source = parsed.srs.tracks[trackId];
+          if (!source || typeof source !== "object") return;
+          var cards = {};
+          Object.keys(source.cards || {}).forEach(function (itemId) {
+            var card = source.cards[itemId];
+            var due = card && Date.parse(card.dueAt);
+            var reviewed = card && Date.parse(card.lastReviewedAt);
+            if (!card || !isFinite(due) || !isFinite(reviewed) || !isFinite(Number(card.lastConfidence)) || Number(card.lastConfidence) < 0 || Number(card.lastConfidence) > 3) return;
+            cards[itemId] = {
+              dueAt: new Date(due).toISOString(), lastReviewedAt: new Date(reviewed).toISOString(),
+              lastConfidence: Number(card.lastConfidence), intervalDays: Math.max(0, Number(card.intervalDays) || 0),
+              ease: Math.min(3, Math.max(1.3, Number(card.ease) || 2.3)),
+              reviews: Math.max(0, Math.floor(Number(card.reviews) || 0)), lapses: Math.max(0, Math.floor(Number(card.lapses) || 0))
+            };
+          });
+          var setting = source.settings || {};
+          if (Object.keys(cards).length || Object.keys(setting).length) {
+            srsTracks[trackId] = { settings: normalizeSrsSettings({
+              trackId: trackId, newCardsPerDay: setting.newCardsPerDay, newCardsPreset: setting.newCardsPreset,
+              newCardsDate: setting.newCardsDate, newCardsShown: setting.newCardsShown,
+              maxLevel: setting.maxLevel
+            }), cards: cards };
+          }
+        });
       }
-      return { tracks: tracks };
+      if (!Object.keys(tracks).length && !Object.keys(srsTracks).length) return { error: "That file has no valid progress entries to import." };
+      return { tracks: tracks, srsTracks: srsTracks };
     }
 
     function applyImportedProgress(importedTracks, mode) {
@@ -722,6 +957,53 @@
         itemCount += Object.keys(imported).length;
       });
       return { trackCount: trackCount, itemCount: itemCount };
+    }
+
+    function applyImportedSrs(importedTracks, mode) {
+      var ids = Object.keys(importedTracks);
+      if (!ids.length) return Promise.resolve({ trackCount: 0, itemCount: 0 });
+      if (mode === "replace") {
+        // Delete first in its own transaction. Deleting and inserting through
+        // the same index cursor can otherwise race on some IndexedDB engines.
+        return openSrsDb().then(function (db) {
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction(["cards", "settings"], "readwrite");
+            var cards = tx.objectStore("cards").index("by-track");
+            var settings = tx.objectStore("settings");
+            ids.forEach(function (trackId) {
+              var keys = cards.getAllKeys(trackId);
+              keys.onsuccess = function () { keys.result.forEach(function (key) { tx.objectStore("cards").delete(key); }); };
+              settings.delete(trackId);
+            });
+            tx.oncomplete = resolve;
+            tx.onerror = function () { reject(tx.error || new Error("Couldn't replace spaced repetition data.")); };
+          });
+        }).then(function () { return applyImportedSrs(importedTracks, "replace-write"); });
+      }
+      return openSrsDb().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction(["cards", "settings"], "readwrite");
+          var cardsStore = tx.objectStore("cards");
+          var settingsStore = tx.objectStore("settings");
+          var count = 0;
+          ids.forEach(function (trackId) {
+            var entry = importedTracks[trackId];
+            settingsStore.put(entry.settings);
+            Object.keys(entry.cards).forEach(function (itemId) {
+              var incoming = Object.assign({ trackId: trackId, itemId: itemId }, entry.cards[itemId]);
+              if (mode === "replace-write") { cardsStore.put(incoming); count++; return; }
+              var get = cardsStore.get([trackId, itemId]);
+              get.onsuccess = function () {
+                var local = get.result;
+                if (!local || Date.parse(incoming.lastReviewedAt) > Date.parse(local.lastReviewedAt)) cardsStore.put(incoming);
+              };
+              count++;
+            });
+          });
+          tx.oncomplete = function () { resolve({ trackCount: ids.length, itemCount: count }); };
+          tx.onerror = function () { reject(tx.error || new Error("Couldn't import spaced repetition data.")); };
+        });
+      });
     }
 
     // Only shown when the import would actually overwrite something —
@@ -779,27 +1061,23 @@
           return;
         }
         var importedTracks = result.tracks;
-        var conflictIds = Object.keys(importedTracks).filter(function (trackId) {
-          return Object.keys(loadProgress(trackId)).length > 0;
+        var involved = {};
+        Object.keys(importedTracks).concat(Object.keys(result.srsTracks)).forEach(function (id) { involved[id] = true; });
+        Promise.all(Object.keys(involved).map(function (trackId) {
+          if (Object.keys(loadProgress(trackId)).length) return true;
+          return getSrsCards(trackId).then(function (cards) { return cards.length > 0; }).catch(function () { return false; });
+        })).then(function (hasConflict) {
+          var conflictIds = Object.keys(involved).filter(function (_, i) { return hasConflict[i]; });
+          function finish(mode) {
+            var progressSummary = applyImportedProgress(importedTracks, mode);
+            applyImportedSrs(result.srsTracks, mode).then(function (srsSummary) {
+              showLandingNotice("Imported " + progressSummary.itemCount + " progress item" + (progressSummary.itemCount === 1 ? "" : "s") + " and " + srsSummary.itemCount + " spaced-repetition card" + (srsSummary.itemCount === 1 ? "" : "s") + ".");
+              if ((state.view === "track" || state.view === "srs") && involved[state.trackId]) render();
+            }).catch(function () { showLandingNotice("Couldn't import spaced repetition data.", true); });
+          }
+          if (conflictIds.length) showImportConflictModal(conflictIds, function (choice) { if (choice !== "cancel") finish(choice); });
+          else finish("merge");
         });
-
-        function finish(mode) {
-          var summary = applyImportedProgress(importedTracks, mode);
-          showLandingNotice(
-            "Imported progress: " + summary.trackCount + " track" + (summary.trackCount === 1 ? "" : "s") +
-            ", " + summary.itemCount + " item" + (summary.itemCount === 1 ? "" : "s") + "."
-          );
-          if (state.view === "track" && importedTracks[state.trackId]) renderTrackView();
-        }
-
-        if (conflictIds.length) {
-          showImportConflictModal(conflictIds, function (choice) {
-            if (choice === "cancel") return;
-            finish(choice);
-          });
-        } else {
-          finish("merge"); // no conflict — merge and replace are equivalent here
-        }
       };
       reader.readAsText(file);
     }
@@ -850,7 +1128,9 @@
     }
 
     function render() {
-      if (state.view === "track" && state.trackId) {
+      if (state.view === "srs" && state.trackId) {
+        renderSrsView();
+      } else if (state.view === "track" && state.trackId) {
         renderTrackView();
       } else {
         renderLanding();
@@ -881,6 +1161,35 @@
       render();
     }
 
+    function showSrs(skipHashUpdate) {
+      state.view = "srs";
+      state.srs = { queue: [], index: 0, answerShown: false, summary: null };
+      if (!skipHashUpdate) updateSrsHash(state.trackId, false);
+      render();
+      var items = SITE_DATA.data[state.trackId] || [];
+      getSrsCards(state.trackId).then(function (cards) {
+        var settings = defaultSrsSettings(state.trackId);
+        openSrsDb().then(function (db) {
+          return requestValue(db.transaction("settings", "readonly").objectStore("settings").get(state.trackId));
+        }).catch(function () { return null; }).then(function (saved) {
+          if (saved) settings = saved;
+          settings = normalizeSrsSettings(settings);
+          var eligibleItems = items.filter(function (item) { return itemMatchesSrsLevel(item, settings.maxLevel); });
+          var eligibleCards = cards.filter(function (card) {
+            return eligibleItems.some(function (item) { return item.id === card.itemId; });
+          });
+          state.srs.settings = settings;
+          state.srs.summary = srsSummary(eligibleItems, eligibleCards);
+          state.srs.queue = selectSrsQueue(eligibleItems, eligibleCards, Math.max(0, settings.newCardsPerDay - settings.newCardsShown));
+          saveSrsSettings(settings).catch(function () {});
+          render();
+        });
+      }).catch(function () {
+        state.srs.storageError = true;
+        render();
+      });
+    }
+
     // Scrolls a specific question card into view and expands it — used when
     // landing on a deep link (#/track/<id>/<itemId>) from a shared URL.
     function focusItem(itemId) {
@@ -903,6 +1212,13 @@
     // hashchange/popstate (browser back/forward, pasted/shared links).
     function routeFromHash() {
       var parsed = parseHash();
+      if (parsed.view === "srs" && parsed.trackId) {
+        if (state.view !== "srs" || state.trackId !== parsed.trackId) {
+          showTrack(parsed.trackId, true);
+          showSrs(true);
+        }
+        return;
+      }
       if (parsed.view === "track" && parsed.trackId) {
         var alreadyThere = state.view === "track" && state.trackId === parsed.trackId;
         // Re-enter the track (resetting filters) whenever switching tracks,
@@ -1045,6 +1361,7 @@
         '<div class="track-toolbar">' +
           '<button class="back-btn" id="back-btn">&lsaquo; All tracks</button>' +
           "<div><h1>" + escapeHtml(name) + "</h1>" + desc + "</div>" +
+          '<button class="action-btn" id="start-srs-btn">Study with spaced repetition</button>' +
         "</div>"
       );
     }
@@ -1176,6 +1493,116 @@
       );
     }
 
+    function renderSrsView() {
+      var track = getTrackMeta(state.trackId);
+      var items = SITE_DATA.data[state.trackId] || [];
+      var summary = state.srs.summary;
+      var current = state.srs.queue[state.srs.index];
+      var header =
+        '<div class="track-toolbar">' +
+          '<button class="back-btn" id="srs-back-btn">&lsaquo; Back to questions</button>' +
+          '<div><h1>' + escapeHtml(track ? track.name : state.trackId) + '</h1><p class="subtitle">Spaced repetition</p></div>' +
+        '</div>';
+      if (state.srs.storageError) {
+        app.innerHTML = '<section class="track-view">' + header + '<div class="empty-state"><p>Spaced repetition needs IndexedDB, but browser storage is unavailable.</p><p class="empty-sub">Your reviews cannot be saved in this browser.</p></div></section>';
+        bindSrsBackButton();
+        return;
+      }
+      if (!summary) {
+        app.innerHTML = '<section class="track-view">' + header + '<div class="empty-state"><p>Loading your review queue…</p></div></section>';
+        bindSrsBackButton();
+        return;
+      }
+      var settings = state.srs.settings;
+      var preset = settings.newCardsPreset;
+      var customInput = preset === "custom"
+        ? '<label>Cards/day <input id="srs-custom-count" type="number" min="1" max="100" value="' + settings.newCardsPerDay + '" /></label>'
+        : '';
+      var summaryHtml =
+        '<div class="srs-summary"><span class="badge">Due now: ' + summary.due + '</span><span class="badge">New available: ' + summary.newCards + '</span><span class="badge">Session: ' + state.srs.queue.length + '</span></div>' +
+        '<div class="filters srs-settings"><div class="filter-row">' +
+          '<label>Study level<select id="srs-level"><option value="Junior"' + (settings.maxLevel === "Junior" ? " selected" : "") + '>Junior only</option><option value="Mid"' + (settings.maxLevel === "Mid" ? " selected" : "") + '>Junior + Mid</option><option value="Senior"' + (settings.maxLevel === "Senior" ? " selected" : "") + '>Junior + Mid + Senior</option></select></label>' +
+          '<label>New cards per day<select id="srs-new-preset"><option value="easy"' + (preset === "easy" ? " selected" : "") + '>Easy (5)</option><option value="recommended"' + (preset === "recommended" ? " selected" : "") + '>Recommended (20)</option><option value="hard"' + (preset === "hard" ? " selected" : "") + '>Hard (40)</option><option value="custom"' + (preset === "custom" ? " selected" : "") + '>Custom</option></select></label>' + customInput +
+        '</div><p>New today: ' + settings.newCardsShown + ' of ' + settings.newCardsPerDay + '.</p></div>';
+      if (!current) {
+        app.innerHTML = '<section class="track-view">' + header + summaryHtml + '<div class="empty-state"><p>All caught up.</p><p class="empty-sub">Come back when more cards are due, or start again after adding questions.</p></div></section>';
+        bindSrsBackButton();
+        bindSrsSettings();
+        return;
+      }
+      var baseItem = null;
+      items.forEach(function (item) { if (item.id === current.itemId) baseItem = item; });
+      if (!baseItem) { state.srs.index++; renderSrsView(); return; }
+      var item = resolveItemForLang(baseItem, track, state.lang).item;
+      var answerHtml = state.srs.answerShown
+        ? '<div class="srs-answer"><h3>Answer</h3><p>' + escapeHtml(item.answer) + '</p>' +
+          (item.explanation ? '<h3>Why</h3><p>' + escapeHtml(item.explanation) + '</p>' : '') + '</div>' +
+          '<div class="srs-grades">' +
+            '<button class="action-btn srs-grade srs-grade-0" data-confidence="0">0 — Don\'t know<small>Again in 10 min</small></button>' +
+            '<button class="action-btn srs-grade" data-confidence="1">1 — Partial answer<small>Short interval</small></button>' +
+            '<button class="action-btn srs-grade srs-grade-2" data-confidence="2">2 — Good answer<small>Normal interval</small></button>' +
+            '<button class="action-btn srs-grade srs-grade-3" data-confidence="3">3 — Interview-ready<small>Longer interval</small></button>' +
+          '</div>'
+        : '<button class="action-btn" id="show-srs-answer-btn">Show answer</button>';
+      app.innerHTML = '<section class="track-view">' + header + summaryHtml +
+        '<article class="srs-card"><span class="badge">' + (current.isNew ? 'New' : 'Review') + ' · ' + (state.srs.index + 1) + ' of ' + state.srs.queue.length + '</span>' +
+          '<p class="srs-question">' + escapeHtml(item.question) + '</p>' + answerHtml +
+        '</article></section>';
+      bindSrsBackButton();
+      bindSrsSettings();
+      var reveal = document.getElementById('show-srs-answer-btn');
+      if (reveal) reveal.addEventListener('click', function () { state.srs.answerShown = true; renderSrsView(); });
+      var grades = app.querySelectorAll('[data-confidence]');
+      for (var i = 0; i < grades.length; i++) {
+        grades[i].addEventListener('click', function () {
+          var confidence = Number(this.getAttribute('data-confidence'));
+          var oldCard = summary.cardsById[current.itemId] || { trackId: state.trackId, itemId: current.itemId };
+          this.disabled = true;
+          var writes = [saveSrsCard(nextSrsCard(oldCard, confidence, new Date()))];
+          if (current.isNew) {
+            state.srs.settings.newCardsShown++;
+            writes.push(saveSrsSettings(state.srs.settings));
+          }
+          Promise.all(writes).then(function () {
+            state.srs.index++;
+            state.srs.answerShown = false;
+            renderSrsView();
+          }).catch(function () { showLandingNotice("Couldn't save this review.", true); });
+        });
+      }
+    }
+
+    function bindSrsBackButton() {
+      var button = document.getElementById('srs-back-btn');
+      if (button) button.addEventListener('click', function () { showTrack(state.trackId); });
+    }
+
+    function bindSrsSettings() {
+      var settings = state.srs.settings;
+      var level = document.getElementById('srs-level');
+      var preset = document.getElementById('srs-new-preset');
+      var custom = document.getElementById('srs-custom-count');
+      if (level) level.addEventListener('change', function () {
+        settings.maxLevel = level.value;
+        saveSrsSettings(settings).then(showSrs).catch(function () { showLandingNotice("Couldn't save settings.", true); });
+      });
+      if (preset) preset.addEventListener('change', function () {
+        var values = { easy: 5, recommended: 20, hard: 40 };
+        settings.newCardsPreset = preset.value;
+        if (preset.value === 'custom') {
+          saveSrsSettings(settings).then(renderSrsView).catch(function () { showLandingNotice("Couldn't save settings.", true); });
+          return;
+        }
+        settings.newCardsPerDay = values[preset.value];
+        saveSrsSettings(settings).then(showSrs).catch(function () { showLandingNotice("Couldn't save settings.", true); });
+      });
+      if (custom) custom.addEventListener('change', function () {
+        settings.newCardsPreset = 'custom';
+        settings.newCardsPerDay = Math.min(100, Math.max(1, Math.floor(Number(custom.value) || 20)));
+        saveSrsSettings(settings).then(showSrs).catch(function () { showLandingNotice("Couldn't save settings.", true); });
+      });
+    }
+
     function captureFocus() {
       var el = document.activeElement;
       if (el && el.id === "filter-search") {
@@ -1240,6 +1667,8 @@
       // pass the click Event as showLanding's skipHashUpdate argument
       // (truthy), silently skipping the hash clear below.
       if (btn) btn.addEventListener("click", function () { showLanding(); });
+      var srsBtn = document.getElementById("start-srs-btn");
+      if (srsBtn) srsBtn.addEventListener("click", function () { showSrs(); });
     }
 
     function bindFilterEvents() {
@@ -1327,7 +1756,7 @@
     // Honor a deep link (#/track/<id>[/<itemId>]) on first load; otherwise
     // render the landing screen as usual.
     var initialHash = parseHash();
-    if (initialHash.view === "track" && initialHash.trackId) {
+    if ((initialHash.view === "track" || initialHash.view === "srs") && initialHash.trackId) {
       routeFromHash();
     } else {
       render();

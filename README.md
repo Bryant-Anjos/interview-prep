@@ -17,8 +17,9 @@ npm start
 Builds the site from the current content and serves it locally (default
 `http://localhost:4173/`, configurable — see [`site/README.md`](site/README.md#preview-it-npm-start)).
 Open that URL in a browser: pick a track, then filter/search/flashcard your
-way through it. Progress ("known" / "needs review") is saved locally in
-your browser.
+way through it. The normal "known" / "needs review" progress and the
+optional confidence-based spaced-repetition schedule are saved locally in
+your browser; export a JSON backup to move or safeguard that progress.
 
 No install step, no dependencies — it's plain Node/HTML/CSS/JS.
 
